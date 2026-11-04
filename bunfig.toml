@@ -1,0 +1,3 @@
+[install]
+# Each package resolves its own dependencies, so eslint-plugin-obsidianmd keeps the TypeScript it supports.
+linker = "isolated"

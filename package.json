@@ -1,0 +1,36 @@
+{
+  "name": "mehrpele",
+  "version": "0.1.0",
+  "description": "Render Mermaid diagrams with the open-source Pele engine, with optional editing, Markdown labels, and canvas and Excalidraw conversion. Unofficial; not affiliated with Obsidian.",
+  "main": "main.js",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zpankz/obsidian-mehrpele.git"
+  },
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "monkey-around": "3.0.0",
+    "pele": "1.13.0"
+  },
+  "devDependencies": {
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.14",
+    "@types/bun": "1.4.4",
+    "acorn": "8.19.0",
+    "esbuild": "0.28.2",
+    "eslint": "10.14.0",
+    "eslint-plugin-obsidianmd": "0.4.2",
+    "obsidian": "1.14.4",
+    "typescript": "7.0.2",
+    "typescript-eslint": "8.72.1"
+  },
+  "packageManager": "bun@1.4.2"
+}

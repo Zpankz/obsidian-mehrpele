@@ -1,0 +1,369 @@
+/* Mehrpele overlay styles — appended to the plugin's styles.css on integration
+. Everything lives under .pele-host so Obsidian theme
+   variables apply to label HTML exactly as in Reading view. */
+
+.pele-host .mehrpele-frame {
+  position: relative;
+}
+
+.pele-host .mehrpele-mount {
+  position: relative;
+}
+
+/* Off-screen measurement host: laid out (so offsets are real) but invisible. */
+.pele-host .mehrpele-measure-host {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  max-width: 480px;
+}
+
+.pele-host .mehrpele-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pele-host .mehrpele-overlay-item {
+  position: absolute;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  text-align: center;
+}
+
+.pele-host .mehrpele-label {
+  display: inline-block;
+}
+
+/* Intrinsic content wrapper inside the stretched overlay item: sized by its
+   content only (never by the reserved box), so measuring it can shrink a
+   reservation. */
+.pele-host .mehrpele-intrinsic {
+  display: inline-block;
+  width: max-content;
+  height: auto;
+  flex: none;
+  align-self: center;
+  /* Laid out 1:1 (SVG units), scaled with the diagram by overlay.ts. */
+  transform-origin: center center;
+}
+
+/* Block margins (paragraphs, callouts, tables, display math) belong to the
+   note flow, not to a label: trim them at the label's edges so the reserved
+   box is content + Pele's own padding. */
+.pele-host .mehrpele-label > :first-child,
+.pele-host .mehrpele-label > :first-child > :first-child {
+  margin-top: 0;
+}
+
+.pele-host .mehrpele-label > :last-child,
+.pele-host .mehrpele-label > :last-child > :last-child {
+  margin-bottom: 0;
+}
+
+.pele-host .mehrpele-label .callout {
+  margin: 0;
+}
+
+/* Image embeds: block-level image, no inline baseline gap under it. */
+.pele-host .mehrpele-embed-image .internal-embed,
+.pele-host .mehrpele-embed-image img {
+  display: block;
+}
+
+.pele-host .mehrpele-embed-image p {
+  margin: 0;
+}
+
+/* labels.ts gives image labels an explicit, aspect-correct box from the
+   image's natural size (fitted to the embed maxima, never clipped); the
+   image fills it. Before the image decodes the label's max-width/height
+   bound it. */
+.pele-host .mehrpele-embed-image img {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/* Node content with a resize corner. */
+.pele-host .mehrpele-embed-image,
+.pele-host .mehrpele-embed,
+.pele-host .mehrpele-diagram {
+  position: relative;
+}
+
+.pele-host .mehrpele-node-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.07s ease-out;
+  /* Constant on-screen size at any diagram zoom: undo the content scale
+     (overlay.ts sets --mehrpele-ui-counter on each intrinsic wrapper). */
+  scale: var(--mehrpele-ui-counter, 1);
+  transform-origin: 100% 100%;
+}
+
+.pele-host .mehrpele-node-resize::after {
+  position: absolute;
+  content: "";
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-bottom: var(--icon-stroke, 2px) solid var(--text-muted);
+  border-right: var(--icon-stroke, 2px) solid var(--text-muted);
+  border-bottom-right-radius: 3px;
+}
+
+@media (hover: hover) {
+  .pele-host .mehrpele-label:hover > .mehrpele-node-resize {
+    opacity: 1;
+  }
+}
+
+.pele-host .mehrpele-resizing > .mehrpele-node-resize {
+  opacity: 1;
+}
+
+.pele-host .mehrpele-resizing > .mehrpele-node-resize::after {
+  border-color: var(--color-accent);
+}
+
+.is-mobile .pele-host .mehrpele-node-resize {
+  display: none;
+}
+
+/* Nested diagrams: a real frame inside the node, compact chrome. */
+.pele-host .mehrpele-diagram > .pele-embed.pele-nested {
+  width: auto;
+  padding: 0;
+}
+
+.pele-host .pele-embed.pele-nested > .embed-actions {
+  top: 2px;
+  inset-inline-end: 2px;
+  background: color-mix(in srgb, var(--background-primary) 85%, transparent);
+  border-radius: var(--radius-s);
+  /* Our chrome keeps its on-screen size while the nested diagram scales. */
+  scale: var(--mehrpele-ui-counter, 1);
+  transform-origin: 100% 0;
+}
+
+.pele-host .pele-embed.pele-nested > .pele-host > .image-resize-corner {
+  scale: var(--mehrpele-ui-counter, 1);
+  transform-origin: 100% 100%;
+}
+
+/* Only the hovered frame shows its corner (not every nested one). */
+.pele-embed:hover .pele-nested:not(:hover) .image-resize-corner::after {
+  opacity: 0;
+}
+
+/* The code panel takes the nested frame's width (wrapping) instead of
+   widening the node: width 0 + min-width 100% adds nothing to the frame's
+   intrinsic width. */
+.pele-host .pele-nested > .pele-source-panel {
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  text-align: start;
+  font-size: var(--font-smaller);
+}
+
+.pele-host .pele-nested > .pele-source-panel code {
+  white-space: pre-wrap;
+}
+
+.pele-host .mehrpele-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.pele-host .mehrpele-embed {
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  box-sizing: border-box;
+}
+
+/* Embed viewports (viewport.ts): the label box is the viewport, laid out at
+   the embed's UI scale; the embedded view fills all of it at any size
+   instead of keeping its own fixed height (base-graph's 400px canvas,
+   Obsidian's content-sized .bases-embed), so enlarging a node never leaves
+   a stale clip line. Views re-lay out through their own ResizeObservers. */
+.pele-host .mehrpele-embed > .internal-embed,
+.pele-host .mehrpele-embed > p > .internal-embed {
+  max-width: none;
+}
+
+/* Fixed-size boxes (.base / .canvas / explicit |WxH): the embed chain is a
+   full-height flex column; the view takes what the header leaves. */
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p:first-child {
+  height: 100%;
+  margin: 0;
+}
+
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > .internal-embed,
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .internal-embed {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .bases-embed > :not(.bases-view),
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > .bases-embed > :not(.bases-view) {
+  flex: none;
+}
+
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .bases-embed > .bases-view,
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > .bases-embed > .bases-view {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+
+/* Views with their own fixed minimum (base-graph 400px, Mehrpele diagram
+   view 240px) fill the view box instead. */
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .bases-embed > .bases-view > .base-graph,
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .bases-embed > .bases-view.mehrpele-bases-view {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Note embeds: one scroller (the node viewport), no inner 4000px cap. */
+.pele-host .mehrpele-embed > p > .markdown-embed > .markdown-embed-content,
+.pele-host .mehrpele-embed > .markdown-embed > .markdown-embed-content {
+  max-height: none;
+  overflow: visible;
+}
+
+/* Only the embed viewport itself takes the pointer: the node padding
+   around it passes through (to the frame's resize corner when a bottom-right
+   node reaches the frame corner). */
+.pele-host .mehrpele-viewport-item {
+  pointer-events: none;
+  /* Above the frame's own resize corner (z-index 1): where an embed's
+     viewport covers it, the embed and its node handle get the pointer. */
+  z-index: 2;
+}
+
+.pele-host .mehrpele-viewport-item .mehrpele-label {
+  pointer-events: auto;
+}
+
+/* One resize handle per embed node: while the node is hovered (or being
+   resized) the enclosing diagram's width corner steps aside. */
+.pele-embed:has(> .pele-host .mehrpele-viewport-item:hover) > .pele-host > .image-resize-corner,
+.pele-embed:has(> .pele-host .mehrpele-resizing) > .pele-host > .image-resize-corner {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Note embeds without an explicit height: fixed width, height follows the
+   content up to the embed maximum (labels.ts sets max-height), then scrolls. */
+.pele-host .mehrpele-embed-auto {
+  height: auto;
+}
+
+.pele-host .mehrpele-embed-lazy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s);
+}
+
+.pele-host .mehrpele-embed-chip {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.pele-host .mehrpele-overlay-item a {
+  min-height: 24px;
+}
+
+/* Edge/cluster labels sit on a background so the line doesn't strike through
+   (Pele's own edge-label rect uses the diagram bg, which our theme maps to
+   transparent — use the note background, near-opaque). */
+.pele-host .mehrpele-overlay-item[data-shape="edge"] .mehrpele-label,
+.pele-host .mehrpele-overlay-item[data-shape="cluster"] .mehrpele-label {
+  background: color-mix(in srgb, var(--background-primary) 92%, transparent);
+  padding: 1px 5px;
+  border-radius: var(--pele-radius, var(--radius-s));
+}
+
+/* Tags and links never split mid-token; the re-measure pass grows the box. */
+.pele-host .mehrpele-label a,
+.pele-host .mehrpele-label .tag {
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+/* Bases view */
+.mehrpele-bases-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 240px;
+}
+
+.mehrpele-bases-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.mehrpele-copy-source {
+  align-self: flex-start;
+}
+
+/* Portal (.canvas) embeds: the "Open original" action in the node corner. */
+.pele-host .mehrpele-embed > .pele-origin-actions {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  z-index: 3;
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.07s ease-out;
+  background: color-mix(in srgb, var(--background-primary) 85%, transparent);
+  border-radius: var(--radius-s);
+}
+
+.pele-host .pele-origin-actions .embed-action {
+  padding: var(--size-2-2) var(--size-2-3);
+  display: flex;
+  color: var(--embed-action-color);
+  border-radius: var(--embed-action-radius);
+  cursor: var(--cursor);
+}
+
+@media (hover: hover) {
+  .pele-host .mehrpele-embed:hover > .pele-origin-actions {
+    opacity: 1;
+  }
+  .pele-host .pele-origin-actions .embed-action:hover {
+    background-color: var(--background-modifier-hover);
+  }
+}
+
+.is-mobile .pele-host .mehrpele-embed > .pele-origin-actions {
+  opacity: 1;
+}

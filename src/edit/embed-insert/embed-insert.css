@@ -1,0 +1,80 @@
+/* === embed-insert: insert-embed popover (src/edit/embed-insert/embed-insert.css) === */
+
+.pele-embed-insert.menu {
+  position: fixed;
+  z-index: var(--layer-menu);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  width: max-content;
+  max-width: 280px;
+  padding: var(--size-4-2) var(--size-4-3);
+}
+
+/* A toolbar group button's flyout: one group's icons, no heading, tight frame. */
+.pele-embed-insert.menu.pele-edit-flyout {
+  gap: var(--size-2-2);
+  padding: var(--size-2-2);
+}
+
+.pele-embed-insert-heading {
+  padding: 0 var(--size-2-1) var(--size-2-1);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pele-embed-insert-grid {
+  display: grid;
+  grid-template-columns: repeat(4, var(--size-4-9, 36px));
+  gap: var(--size-2-2);
+}
+
+.pele-embed-insert-item.clickable-icon {
+  width: var(--size-4-9, 36px);
+  height: var(--size-4-9, 36px);
+  justify-content: center;
+  --icon-size: var(--icon-m);
+}
+
+.pele-embed-insert-item.clickable-icon:focus-visible {
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.pele-embed-insert-item.has-sub.is-active {
+  background-color: var(--background-modifier-active-hover);
+  color: var(--text-accent);
+}
+
+.pele-embed-insert-sub {
+  padding-top: var(--size-4-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.pele-embed-insert-accessory.clickable-icon {
+  position: fixed;
+  z-index: var(--layer-popover);
+  padding: var(--size-2-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-s);
+}
+
+.pele-embed-insert-detail {
+  color: var(--text-muted);
+}
+
+.pele-embed-insert-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  min-height: 1.2em;
+}
+
+.pele-embed-insert-input {
+  width: 100%;
+}
+
+/* === end embed-insert === */

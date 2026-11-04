@@ -1,0 +1,651 @@
+# Mehrpele
+
+Render `mermaid` code blocks in Obsidian with [Pele](https://www.npmjs.com/package/pele), a fast,
+synchronous Mermaid renderer that produces themeable SVG, and edit the diagrams in place.
+
+Mehrpele renders in Reading view, Live Preview, embedded notes, Canvas text cards and the
+lightbox. It adds an edit toolbar, node resizing, responsive reflow, one-click repair, Canvas
+conversion and Mehrpele blocks: diagrams whose nodes hold Markdown, images, notes, Bases views,
+web pages and nested diagrams.
+
+This is an unofficial community plugin. It is not made by or affiliated with Obsidian, the Pele
+authors or the Mermaid project. Obsidian 1.15+ ships its own Pele; this plugin keeps its own
+bundled copy (`pele@1.13.0`), owns `mermaid` blocks while enabled, and never touches core's
+`window.pele`. Its script API is `window.peleMermaid`.
+
+## Install
+
+- **Community plugins:** Settings → Community plugins → Browse → search "Mehrpele" → Install,
+  then Enable.
+- **Manual:** download `main.js`, `manifest.json` and `styles.css` from the latest
+  [release](../../releases/latest) into `<vault>/.obsidian/plugins/mehrpele/`, then enable
+  **Mehrpele** under Settings → Community plugins.
+
+Requires Obsidian 1.13.1 or later. Works on desktop and mobile. The Obsidian CLI handlers are
+desktop only.
+
+## What it does
+
+- Registers a code-block processor for `pele` (always) and for `mermaid`
+  (when "Override mermaid blocks" is on at plugin load), so diagrams render
+  inside a `.pele-host` element in Reading view and Live Preview, including
+  embedded notes (`![[note]]`) and split panes.
+- **No Mermaid trust prompt over Pele.** Obsidian 1.14 asks "Display Mermaid
+  diagrams in this vault?" before running mermaid.js in a vault you have not
+  allowed (per vault and device; Settings → Editor → "Show Mermaid diagrams in
+  notes"). Pele renders the SVG itself and runs no mermaid.js, so it does not
+  use that prompt: wherever Pele renders a `mermaid` block (Reading view,
+  Live Preview, embedded notes, Mehrpele labels) the diagram shows without
+  the banner, trusted vault or not. Your trust setting is never read or
+  changed; turn "Override mermaid blocks" off (or disable the plugin) and
+  Obsidian's own rendering and prompt come back. Remote images in diagrams
+  follow **Allow remote images**; links follow the link policy below.
+  (`src/mermaid-guard.ts`: if Obsidian changes the banner's markup, Pele
+  still renders and the banner may simply stay.)
+- Each diagram is a `MarkdownRenderChild`; its Pele mount is `destroy()`ed on
+  unload, so there are no leaked observers/listeners.
+- Invalid syntax never throws out of the processor: Pele reports the error via
+  `onError` / `Mounted.error`, and the plugin shows a `pre.pele-error` with
+  `Pele: [code] (type) at line:column — message` plus the source snippet/caret
+  (snippet can be turned off in settings).
+- Internal diagram links (`click` targets that Pele marks `internal: true`)
+  open via `workspace.openLinkText`; external links open in the browser.
+
+## Settings
+
+| Setting | Effect |
+|---|---|
+| Override mermaid blocks | On by default. Applied at plugin load (see Limitations). |
+| In-place pan/zoom (Pele) | `off` (default) / `auto` / `always` → Pele `MountOptions.zoom`. The lightbox replaces it. |
+| Max width (px) | Caps the layout width; `0` fits the note. |
+| Font family override | CSS font-family for diagram text; empty inherits. |
+| Font size (px) | Base diagram font size; `0` is Pele's default. |
+| Show error snippet | Include the offending line/caret in inline errors. |
+| Node resize handles | `On hover` (default) / `Off`. Off hides the per-node handles; `%% pele-size %%` lines still render. |
+| Edit toolbar | On (default): Canvas-style menu on nodes, edges and subgraphs (colour, text size, shape, arrows, delete). |
+| Inline text editing | On (default): Edit text / double-click opens Obsidian's Markdown editor over the label. |
+| Reflow diagrams to fit | On (default): lay diagrams out for their width, never magnify, floor then scroll. Off: legacy CSS scaling. |
+| Switch direction to fit | On (default): LR/RL flowcharts (mindmap, timeline, journey, state LR) turn top-down when they stop fitting, with 32 px hysteresis. |
+| Turn wide class, state and ER diagrams sideways | On (default): no written direction + too wide top-down → `direction LR`. |
+| Smallest text scale | 0.8 (default, 0.3–1): shrink floor before a diagram scrolls. |
+| Magnify resized diagrams (legacy) | Off (default). On: `width=N` stretches the diagram to fill its frame, as before. |
+| Animate layout changes | On (default): FLIP transitions; reduced motion skips them. |
+| Re-render open notes | Button forcing all open markdown views to rebuild. |
+
+Zoom/size/font changes apply live to mounted diagrams (no note reload).
+
+## Deeper Pele integrations
+
+- **Icons**: diagram icons written as `fa:fa-car`, `lucide:car` or bare names
+  resolve through Obsidian's built-in Lucide set (`getIcon`) — only markup
+  generated by Obsidian itself is returned to Pele's `icons` resolver, and
+  unknown names render with no icon. Toggle: "Icons from Obsidian (Lucide)".
+  Common Font Awesome aliases live in `src/icons.ts`.
+- **Links**: Pele's `internal` links open with `openLinkText` (mod-click opens
+  a new pane) and participate in hover preview (`registerHoverLinkSource("mehrpele")`
+  + the `hover-link` workspace event). `linkSchemes` adds `obsidian` to Pele's
+  defaults; `obsidian://` and web links go through `window.open`. Blocked
+  schemes (`javascript:`/`data:`/`vbscript:`) never navigate. The same routing
+  applies inside the lightbox.
+- **Link guard (`obsidian://`)**: a capture-phase click guard (main window,
+  popouts already open at load, and later `window-open`) covers diagrams,
+  Mehrpele overlays and the lightbox. It classifies the URL as the browser
+  parses it (`HTMLAnchorElement.href`, or SVG `href.baseVal` resolved against
+  `baseURI`) as well as the raw attribute, after stripping C0 controls/spaces
+  at both ends like the URL standard, so `"\u0001obsidian://…"` or `&#1;`
+  prefixes can't slip past. The action must be exactly `open`, `adv-uri` or
+  `advanced-uri` (ASCII case-insensitive; no `o.pen` normalisation). Navigation
+  URIs (`obsidian://open`, Advanced URI `adv-uri` with
+  `filepath`/`heading`/`block`/`line`/`openmode`) are allowed. Command URIs
+  (`commandid`) are blocked unless "Allow command URIs from diagrams" is on
+  *and* the exact command id is in the allowlist (Settings → Render policy).
+  Write/replace/settings/plugin parameters (`data`, `mode`, `frontmatterkey`,
+  `settingid`, …) are blocked regardless. Blocked clicks show a Notice that
+  explains why.
+- **Unique ids**: every frame renders with its own `idPrefix` (`pele-N-`), and
+  the lightbox renders a fresh SVG with a new prefix instead of cloning, so
+  a11y `<title>`/`<desc>` ids never collide across diagrams or embeds.
+- **Render policy (app-controlled)**: settings for a default Mermaid config
+  (JSON object; frontmatter/`%%{init}%%` still override it, and invalid JSON is
+  ignored with a Notice), Allow links, Allow remote images (`http`/`https`
+  only), Gantt today marker (`now`), and Max source length (`limit`).
+- **Sanitize SVG** (off by default): a DOMParser allowlist sanitizer
+  (`src/sanitize-svg.ts`) — known SVG elements, no `script`/`foreignObject`,
+  no `on*` attributes, fragment/safe-scheme hrefs only. Obsidian's
+  `sanitizeHTMLToDom` was not used: whether DOMPurify keeps Pele's CSS-var
+  fills/markers intact could not be verified without a live Obsidian.
+- **Accessibility**: a frame gets `role="img"` and an `aria-label` from the
+  diagram's `accTitle` (falling back to its type) unless it contains links;
+  `accTitle` also titles the lightbox.
+- **Canvas**: text cards rendered via `MarkdownRenderer` go through the same
+  processor; when `getSectionInfo` returns null the diagram still renders and
+  resize there is live-only (no fence to persist into).
+
+## Context menu
+
+Right-click a diagram (native image parity): Copy SVG (current `--pele-*`
+theme values inlined as a `<style>` so it pastes correctly elsewhere), Copy as
+PNG (canvas at 2× devicePixelRatio, written with the system clipboard API),
+Export SVG/PNG (non-colliding file next to the note), Open in Pele
+playground (source permitting), Edit source, Reset size (when a width is
+set), and Reset node size / Reset all node sizes (when the block has
+`%% pele-size %%` entries). The menu is an icon grid at the pointer, one row
+per group (copy, export, open, size); each name is the icon's tooltip and
+accessible label. Arrow keys, Home and End move, Enter or Space runs, Esc
+closes. The hover bar deliberately stays at zoom + code, like native embeds.
+
+**Copy link to this diagram** / **Copy wikilink to this diagram** (diagrams
+in a note's own Reading view or Live Preview, plain and Mehrpele; not in
+embeds, Canvas or generated diagrams): ensures a block id
+`^pele-<hash8>` (FNV-1a of the source) on the line right after the closing
+fence. That is one undoable edit: an editor transaction in Live Preview, one
+`vault.process` in Reading view. An existing `^id` after the fence is reused
+and never duplicated, and identical diagrams get `-2`, `-3`, … suffixes. It
+then copies `obsidian://adv-uri?vault=…&filepath=…&block=pele-<hash8>` when
+Advanced URI is enabled (otherwise `obsidian://open?vault=…&file=…`), or
+`[[Note#^pele-<hash8>]]`.
+
+## Theming with CSS snippets
+
+Beyond the variables in `styles.css` (now also `--pele-critical`,
+`--pele-error`, `--pele-font-mono`, `--pele-title-weight`,
+`--pele-heading-weight`, `--pele-bold-weight`), snippets can target Pele's
+classes — `.pele-<type>`, `.pele-node[data-id="…"]`, `.pele-edge`,
+`.pele-cluster`, `.pele-label`, `.pele-icon`:
+
+```css
+/* Make the "db" node in flowcharts use the accent colour. */
+.pele-host .pele-node[data-id="db"] > rect {
+  fill: var(--interactive-accent);
+}
+```
+
+Note that colours set with Mermaid `style`/`classDef`/`linkStyle` are fixed by
+the diagram author and do not follow the theme. The exception is the edit
+toolbar's and Canvas's palette presets (`canvas1`–`canvas6`), which map to
+the theme's `--color-<name>-rgb` palette.
+
+## Repair (1-click)
+
+Error frames get a wrench action in the hover bar and a "Repair" button in the
+error pane. Repair runs tiers in fixed order — **linter** (local deterministic
+fixes from the shared `pele-render/repair` engine, each Pele-validated) →
+**jev** (ranks tied candidates through the Jev HTTP API) → **llm**
+(Anthropic or OpenAI-compatible, incl. local Ollama) — and applies the result
+as a single edit (one undoable editor dispatch in Live Preview; a relocated
+`vault.process` write in Reading view, with an Undo button on the notice).
+"Preview before applying" shows a diff modal first; Jev and LLM results (model
+output) and lossy results always show it, whatever that setting says — only
+linter fixes are true 1-click. Commands: "Repair current
+diagram" and "Repair all diagrams in current note" (sequential, one
+undoable edit per block). API keys live in Obsidian SecretStorage; the Jev/LLM
+tiers send the diagram source to the configured service and are off by default.
+
+## Commands
+
+- **Copy current diagram as SVG** — copies the SVG (live mounted SVG when
+  available, otherwise a fresh Pele `render()`) to the clipboard. Falls back to
+  the first diagram in the note.
+- **Export current diagram as SVG file** — writes
+  `<notename>-diagram[-N].svg` next to the note (overwrites if present).
+- **Validate all Mermaid blocks in note** — parses every `mermaid`/`pele` block
+  and shows a Notice with the valid count and the first error.
+- **Undo / Redo last diagram edit (reading view)**: step the note's diagram
+  edits made in Reading view (see *Undo and redo*).
+- **Remove stale node sizes in this note** — drops `%% pele-size %%` entries
+  for nodes that no longer exist, in one undoable edit.
+
+## Theming
+
+Pure CSS variables — switching light/dark (or theme) recolours diagrams
+instantly with no re-render. `.pele-host` maps each Pele variable to Obsidian
+1.15's diagram variable first, then the older Obsidian variable, so themes and
+snippets written for core's diagrams style ours too:
+
+`--pele-bg: var(--mermaid-background, var(--background-primary))`,
+`--pele-fg: var(--mermaid-text-color, var(--text-normal))`,
+`--pele-line: var(--mermaid-line-color, var(--text-normal))`,
+`--pele-muted`, `--pele-surface`, `--pele-surface-alt`, `--pele-border`,
+`--pele-accent`, `--pele-critical`, `--pele-error`, `--pele-radius` and the
+weights likewise (`--mermaid-<name>`), `--pele-series-1..8` from
+`--mermaid-color-1..8` then `--color-red/orange/yellow/green/cyan/blue/purple/pink`,
+and `--pele-font: var(--font-mermaid, var(--font-text))`.
+
+Diagram wrappers carry core's `mermaid` class beside `.pele-host` so core's
+`.mermaid` rules (link colours, Live Preview zoom offsets) apply; Obsidian ≤1.14's
+dark-mode `filter: invert()` on `.mermaid > svg` is cancelled.
+
+On `css-change` (font/theme changes) the plugin calls `forgetTextWidths()` and
+`refresh()` on every live mount so text re-measures with the new fonts.
+
+## Enable / disable behaviour
+
+Only open notes that contain one of our fences are refreshed. On load, Reading
+views re-render once layout is ready and LP editors are redrawn in place when
+the LP patch first applies; on unload those leaves are rebuilt
+(`leaf.rebuildView()`). Enabling therefore takes effect without reopening
+notes, and disabling returns native Mermaid rendering.
+
+## Integrations, Canvas, Excalidraw and CLI
+
+- **Integrations**: optional `pele-breadcrumbs` / `pele-datacore` / `pele-tasks`
+  blocks (off by default; see [docs/integrations.md](docs/integrations.md)). Generated
+  diagrams render through the same native frame as `pele` blocks. In Live
+  Preview these languages are handled by Obsidian's own processor branch of
+  the fenced-code widget (no prototype interception needed — the integration
+  handler renders into the widget's container and calls the full frame path).
+- **Advanced URI deep links**: generated nodes that know a heading or block
+  (e.g. Datacore `@section`/`@block` results) link with
+  `obsidian://adv-uri?vault=…&filepath=…&heading=…|block=…` when Advanced URI
+  is enabled; otherwise they use the internal `path#heading` / `path#^block`
+  form. The link guard classifies both as navigation.
+- **Extended Graph colours** (Integrations → "Use Extended Graph colours",
+  default off): when Extended Graph is enabled, its explicit
+  tag/property/folder colours, link-type colours and shape queries style
+  `pele-breadcrumbs` / `pele-datacore` / `pele-tasks` flowcharts and
+  Bases-generated diagrams. These become theme-safe `classDef`s (translucent
+  fill, solid stroke), `linkStyle` strokes and the nearest Pele shapes.
+  Pele reads only Extended Graph's in-memory settings object (it is GPLv3;
+  none of its code is used). Colormap-derived colours aren't reproduced, and
+  an unrecognised settings shape is logged once and skipped.
+- **Mehrpele is opt-in**: "Enable Mehrpele" (default off). When off,
+  `mehrpele` blocks render as plain Pele with a one-line hint and the
+  `%% mehrpele %%` directive is ignored.
+- **Mehrpele node content** (Settings › Mehrpele):
+  - *Images* (`A["![[shot.png]]"]`) are sized from the image's natural size,
+    aspect kept and never clipped: without a size they show at natural size,
+    shrunk to fit the embed-node maxima (640×480 by default). A written size
+    (`![[shot.png|100]]`) is honoured, but in **Legible** mode (default) never
+    below the *minimum legible scale* (50 %) of the natural size; **Exact**
+    uses sizes as written. A size you set may go up to the image's natural
+    size (or the maxima, for small images).
+  - *Resize in place*: hover a node with an image or embed and drag its
+    bottom-right corner; it follows the pointer on each axis. An image is
+    fitted (contained) in the dragged box with its aspect: dragged along its
+    aspect it grows; dragged against it (straight down on a wide image) it
+    keeps its width and the node grows instead, by exactly the travel (a
+    `pele-size` entry), with the image centred. An image never shrinks
+    because one side of the box grew. Note embeds are viewports: each axis
+    grows on its own, up to the embed maxima. Releasing writes the size into
+    the label (`|W` for images, `|WxH` for note/.base/.canvas embeds); double-click the
+    corner to go back to the automatic size (same intent rules as the frame
+    corner: interacting with a Base, graph or note under the corner never
+    resizes it). Note embeds without a height grow with their content up to
+    the maximum height, then scroll.
+  - *Full bleed*: a node whose label is one element — a web page, PDF,
+    workspace view, folder, Base, note embed, image, nested diagram or code
+    block — fills its node edge to edge: no label padding, the node box is
+    the element's box (`|WxH` is the node's size). Pele sizes heights in
+    whole lines (1.5 em), so a fixed-aspect element (image, nested diagram)
+    gets the next whole-line height and the matching width and covers the
+    box without cropping; views and embeds take the box exactly. A box you
+    make larger with the node handle (`%% pele-size %%`) is filled too
+    (views and embeds grow with it; images and diagrams scale, aspect kept).
+    Only freely sizable rect-like shapes bleed; circles, diamonds and other
+    inscribed shapes keep their padded label. Plain and Markdown text labels
+    are unchanged.
+  - *Embeds are viewports, not zoomed pictures*: Bases views (table, cards,
+    list, kanban, base-graph, the Mehrpele diagram view), Canvas and note
+    embeds keep their toolbars and controls at native size when the diagram
+    is shown larger (a wide frame, the lightbox); the extra room goes to the
+    view, which always fills the whole node and re-lays itself out (no clip
+    line at the view's own default height). When the diagram is shrunk to
+    fit, controls shrink with it down to *Minimum embed UI scale* (75 %),
+    then the view shows less and scrolls. Node sizes (`|WxH`) stay in diagram
+    units, so they mean the same at any zoom. Text, images and nested
+    diagrams still scale with the diagram. *Embed scaling → Zoom with
+    diagram* restores the old magnifying behaviour. Resize handles keep a
+    constant on-screen size at any zoom, and an embed node shows one handle
+    at a time (its own while hovered, the diagram's width corner otherwise).
+    Wheel over an embed in the lightbox scrolls it (Ctrl/⌘ + wheel zooms).
+  - *Nested diagrams*: a label that is exactly one diagram fence renders as
+    a real diagram inside the node, with its own zoom, code reveal and resize
+    corner (the width is saved as `width=N` on the inner fence). Inside a
+    ```` ``` ```` block use a tilde fence, or wrap the block in four
+    backticks:
+
+    ````markdown
+    ```mehrpele
+    flowchart LR
+      A["**Parent**"] --> N["~~~mermaid
+    flowchart TD
+      X --> Y
+    ~~~"]
+    ```
+    ````
+
+    `~~~pele` and `~~~mehrpele` work too (escape quotes inside a nested
+    Mehrpele label as `\"`). An embed whose target holds one diagram also
+    nests: a `.mmd` / `.mermaid` / `.pele` file, or a note, `#heading` or
+    `#^block` section that is a single diagram fence
+    (`E["![[Diagrams#Sequence]]"]`, width saved as `|W`). Diagrams embedded
+    from other files are never edited by a resize there (in memory only).
+  - *Open the original*: a nested diagram, or a `.canvas` embed in a node
+    (an Advanced Canvas portal), has an *Open original* action (↗) beside
+    zoom and code. When a nested frame is too narrow (or too close to an
+    edge) for its action bar, the bar floats above the diagram while the
+    frame is hovered, at the frame's top-right and inside the window, and
+    returns when the pointer leaves. ⌘/Ctrl-click or middle-click on its background does the
+    same in a new tab (⌘/Ctrl+Alt: split, ⌘/Ctrl+Alt+Shift: window), and
+    ⌘/Ctrl-hover shows a page preview. Embeds open at their note, `#heading`
+    or `#^block`; `![[board.canvas#node-id]]` opens the canvas with that
+    node selected and centred. An inline fence's action reveals the outer
+    block (the cursor in Live Preview, the source panel in Reading view);
+    ⌘/Ctrl-click opens the note at that block in a new tab. Plain clicks,
+    double-clicks, drags and resize drags never navigate, and links inside
+    the nested diagram keep their own behaviour.
+  - *View nodes* (Settings › Mehrpele › View nodes, on by default): a node
+    can be a live web page, PDF or workspace view, working like it does in
+    Canvas (pages scroll, PDFs page and zoom, graphs pan and zoom).
+
+    ````markdown
+    ```mehrpele
+    flowchart LR
+      W["![[https://example.com|440x320]]"] --> P["![[paper.pdf#page=3|400x460]]"]
+      M["![Title|440x320](https://example.com)"]
+      L["![[view:localgraph?depth=2]]"] --> G["![[view:graph?search=path:Projects tag:#x]]"]
+      B["![[view:backlink?file=Some Note]]"]
+      K["![[view:kanban?file=Board.md]]"]
+    ```
+    ````
+
+    The Markdown form `![Title|WxH](https://…)` is also image syntax, so it
+    becomes a web node only when the URL doesn't load as an image (badges and
+    CDN images stay images); `![[https://…]]` is always a web node.
+
+    `view:<type>?key=value&…`: core types `localgraph` (`depth=1–5`,
+    `incoming=0`, `outgoing=0`, `neighbors`, `tags`, `attachments`,
+    `search=`), `graph` (`search=`, `tags`, `orphans=0`, `unresolved`),
+    `backlink` (`unlinked`, `context`, `search=`), `outgoing-link`,
+    `outline`, `search` (`query=`), `tag`, `file-explorer`, `bookmarks`,
+    `file-properties`, `all-properties`, `webviewer` (`url=`); aliases
+    `local`, `backlinks`, `outgoing`, `tags`, `files`, `properties`, `web`.
+    Any other type is a plugin view: `file=` becomes its `state.file`, and
+    `state={…}` (JSON, last parameter) is passed to its `setState`.
+    `controls=1` shows a graph's control panel, `header=1` the view header.
+    Views that show a note (local graph, backlinks, outline, properties) use
+    the note holding the diagram unless `file=` names another. Values are
+    verbatim except percent escapes: write `%26` `%3D` `%7C` `%5D` for
+    `&` `=` `|` `]`. `#` may be written as is, and `"` inside the label is
+    written `\"`. An unknown type, a disabled core plugin, a missing note or
+    a blocked URL shows a chip saying so; views that exist but cannot be
+    hosted here offer *Open in sidebar*. Every view's ↗ action opens the
+    original: the page in the Web viewer (⌘/Ctrl: the browser), the PDF at
+    its page, the view in the right sidebar.
+  - *Folders*: `A["![[Projects/]]"]` (a trailing `/`, or a bare
+    `![[Projects]]` that names a folder) shows the folder's files as a live
+    Bases view inside the node: name, modified and tags columns, newest
+    first, and a view switcher (table, cards, list, plus kanban when a
+    kanban Bases view is installed). Search, sort, filter, grouping and
+    opening a file work as in any Base. `![[Projects/|recursive|cards]]`
+    includes subfolders and opens on Cards; the long form is
+    `![[view:folder?path=Projects&recursive=1&view=cards]]`. The base is
+    generated inline and nothing is written: changes made in the view last
+    until it reloads. *Save as .base* (the view bar) writes
+    `<Folder> files.base` next to the note (a new name if it exists, never
+    overwriting) and says how to embed it. Canvas conversion turns a folder
+    node into a text card holding the same `base` block, so Canvas shows the
+    same view, and back to the folder embed.
+  - *Attached views*: any node, including plain text and note-embed nodes in
+    plain mermaid blocks, can carry views shown on demand:
+    `%% pele-view A=localgraph depth=1; A=backlink; B=graph search="tag:#x" %%`
+    (last lines, like `%% pele-size %%`; `;` separates entries; a node may
+    repeat; values with spaces are quoted; `ID=view:type?…` works too).
+    Hovering such a node shows a view button; it opens a panel under the node
+    with one tab per view (resize it from its corner, or toggle a larger
+    size). The default note is the node's own `[[link]]` or note embed,
+    else the note holding the diagram. Repair, reflow, materialise and canvas
+    conversion keep the line. *Remove stale attached views* drops entries of
+    deleted nodes.
+  - *How they stay fluid*: views mount when they come near the viewport
+    (300 px), at most *Max live views* (6) at once. Off-screen views stay
+    loaded for 30 s while slots allow, then release. Views beyond the cap
+    show "click to load", and a lightbox or open panel takes a slot first.
+    The live view sits on a layer of the note's scroller, never inside the
+    re-rendered diagram. Resizing a node, an edit elsewhere or a re-layout
+    keeps it as it is (the same page, scroll position, PDF page and graph
+    zoom); moving a web view in the DOM would reload it. Wheel, drag and keys
+    stay inside the view (the note never scrolls under it, no editor cursor
+    moves in Live Preview, no lightbox zoom; ⌘/Ctrl + wheel still zooms the
+    lightbox). A view that focuses itself on load (Excalidraw does) never
+    takes focus or scrolls the note. Resizing the node re-fits the view.
+    Theme changes apply as they do in the sidebar.
+  - *No layout pollution*: views run in WorkspaceLeafs of a detached
+    WorkspaceSplit (not attached to the workspace). They never become the
+    active leaf, never appear in `workspace.json`, never trigger
+    layout-change or resize events, and keep their own note (pinned) instead
+    of following the active file. A filtered `view:graph` never writes your
+    global graph settings (`graph.json`).
+  - *Security*: web pages load as Canvas link cards do: a `<webview>` in the
+    vault's browser partition with no Node.js and no popups (mobile: a
+    sandboxed `<iframe>`). Only *Allowed URL schemes* load (http/https by
+    default); `obsidian:`, `file:`, `javascript:` and `data:` never do,
+    including navigation started inside a page (a notice says it was
+    blocked). *Web pages in nodes* turns web nodes off. obsidian:// links
+    inside hosted views stay under the link guard.
+  - *With the edit toolbar*: a view node is selected by clicking its node
+    border or, for full-bleed views (no border to click), the title in the
+    view bar shown on hover in the view's bottom-left corner (Shift adds to
+    the selection); clicks inside the view stay the view's. Colour and shape style
+    the node box, never the view. The pencil and double-click text editing
+    are off for view nodes (edit the view in the block source). "+" quick-add,
+    grouping, a shared child and delete work as for any node. Hovering the
+    view shows the node's hover outline, toolbar and box handle, and the copy
+    action copies the block source.
+  - Settings: View nodes, Attached-view button, Max live views (1–32), Web
+    pages in nodes, Allowed URL schemes, Default local graph depth.
+  - Converting a canvas with view nodes on turns web link cards into web-view
+    nodes (`![[https://…|WxH]]`, sized like the card) and PDF cards into
+    PDF view nodes, and back.
+  - *Nesting depth*: "Max nesting depth" (default 3) bounds diagrams inside
+    diagrams; deeper ones show as a link chip (or a plain diagram, for
+    embedded notes), so notes that embed themselves stop.
+  - Validation (error panes, `pele:check`, repair, export) treats label
+    Markdown as text, so nested fences and `\"` never cause false errors;
+    exported SVGs show labels as plain fallback text ("flowchart diagram"
+    for a nested diagram).
+- **Canvas**: "Convert diagram to canvas" (command, diagram menu) and
+  "Convert canvas to Mermaid…" (command, `.canvas` file menu: new note beside
+  the canvas, insert into a note — at the cursor if it is open, after any
+  fence there — or copy; plus the direct commands "Convert canvas to a new
+  Mermaid note" / "Insert canvas as Mermaid into a note…"), via
+  `pele-render/canvas`. Notes, headings, blocks, images, PDFs, bases and
+  portals become Mehrpele embeds sized like their cards (the block is
+  `mehrpele` when needed), text cards keep their Markdown, link cards become
+  clickable nodes, groups subgraphs; presets follow the theme palette
+  (`canvas1`…`canvas6`, styled in `styles.css`), hex colours, borders, edge
+  colours, dashes, arrows and sides map both ways. Setting *Canvas to Mermaid
+  layout*: **Canvas positions** (default) writes `%% pele-layout canvas %%`
+  + `%% pele-pos %%` so the diagram draws every card where it is on the
+  canvas; **Automatic** lets Pele lay it out. A `%% pele-canvas %%` line keeps
+  ids, exact positions and sizes, so converting back opens the canvas with
+  the cards where they were (unchanged cards exactly; edited ones keep their
+  centre; new ones land beside their neighbours). Mehrpele draws embed
+  heights in whole lines and, with *embed sizing: legible*, can enlarge small
+  images beyond their card; positions stay pinned. The open canvas's live
+  data is converted (unsaved moves count). Round trips also carry
+  `metadata.pele.sourceHash`. The file is named by the
+  diagram's source hash (`<note> - diagram <hash6>.canvas`); an existing file
+  is only regenerated when its `metadata.pele.sourceHash` matches this
+  diagram (keeping manual layout and any cards/edges you added), otherwise a
+  new numbered file is created — another diagram's canvas is never overwritten.
+- **Materialise diagram as notes** (command; `pele:materialise` on the CLI):
+  turns a flowchart or state diagram into notes, built on the Canvas
+  conversion.
+  - Subgraphs and composite states become folders under `<note>/`, nested ones
+    nested.
+  - Nodes become notes titled after their label (filename-safe). The embed's
+    title, which is the file name, is the node's label, so the body never repeats
+    it. The original label goes into `aliases`, and into the body only when the
+    filename had to drop characters.
+  - Edge labels become frontmatter properties on the source note, holding
+    `"[[target]]"`. Unlabelled edges use `canvas-link`. Several targets make a
+    list.
+  - The block is rewritten in place so every node is a Mehrpele note embed
+    (`A["![[…/A]]"]`, adding `%% mehrpele %%` if needed). Comment and
+    directive lines (`%% pele-size %%`, `%% pele-reflow %%`, `%%{init}%%`) are
+    kept verbatim, and each embed node resizes with both its box handle
+    (`pele-size`) and its content handle (`|WxH`).
+  - A preview modal lists every folder, note, property write and the
+    before/after block. Existing notes are never overwritten: link (default),
+    skip, or create with a suffix.
+  - Notes carry `pele-materialised: "[[note#^block-id]]"` and `pele-node`, so
+    re-running is a no-op or adds only what's new.
+  - The rewrite is one undoable edit in Live Preview. **Undo materialise** (on
+    the Notice, or the "Undo last materialise" command) trashes only files and
+    empty folders the run created, and reverts its property writes.
+  - Class, sequence, mindmap and other types are refused with a message.
+  - Settings › Materialise. Design: [docs/materialise.md](docs/materialise.md).
+- **Excalidraw** (off by default; Settings › Excalidraw conversion): converts
+  a diagram into an editable Excalidraw drawing. Needs the Excalidraw plugin
+  (2.29.0 or later), which Mehrpele never installs. Adds the commands
+  "Convert current diagram to Excalidraw" and "Insert diagram into active
+  Excalidraw drawing", "Convert to Excalidraw" in the diagram menu, and the
+  `pele:excalidraw` CLI handler. If the retired Pele Excalidraw plugin is still
+  enabled, Mehrpele stands down and asks you to disable it.
+- **Obsidian CLI**: `pele`, `pele:types`, `pele:check` (JSON schema matches
+  `pele-render check`), `pele:render`, `pele:export`, `pele:repair`,
+  `pele:canvas`, `pele:from-canvas`, `pele:materialise`, `pele:excalidraw`
+  (with Excalidraw conversion on) (desktop only). `index=` is
+  0-based document order over `mermaid|pele|mehrpele` fences
+  (case-insensitive, CRLF-safe); `.mmd`/`.mermaid` files are one whole-file
+  diagram (`index=0`). `out=`/`folder=` must be vault-relative (no absolute
+  paths, `~` or `..`) with the expected extension (`.svg`/`.png`/`.canvas`;
+  `.json`/`.txt`/`.md` for `pele:check out=`), and existing files are refused
+  unless `force` (a `pele:canvas` re-export of the same diagram updates its
+  own canvas). `pele:export` skips existing files unless `force`.
+  `pele:repair format=json` returns `pele-render repair --format json`'s shape;
+  `write` applies each block independently (Mehrpele and whole-file
+  diagrams included). `pele:from-canvas` takes `lang=mermaid|mehrpele` (or the
+  `mehrpele` flag; default: mehrpele when the canvas needs Markdown labels or
+  Mehrpele is on), `layout=canvas|auto`, `portals=` and `portal-depth=`
+  (inline portals are resolved in the vault). `pele:check folder=` yields to the UI every 10 notes.
+  `pele:materialise path=<note> index=N [dry-run] [root=<folder>]
+  [on-existing=link|skip|suffix] [no-rewrite]` prints JSON listing the folders,
+  notes (with action), property writes and the rewritten block, plus
+  `created`/`errors` when it wrote.
+  The standalone `pele-render` CLI is a separate tool; Mehrpele does not
+  install it.
+- **Repair**: lossy repairs (comments/removals) always show the diff modal
+  first and are labelled "(lossy)" in the result Notice.
+
+## Known limitations
+
+- **Override toggle needs a plugin reload.** Obsidian registers code-block
+  processors at load and offers no unregister for a single processor. Turning
+  "Override mermaid blocks" off/on saves the setting and prompts you to toggle
+  the plugin off/on (or restart Obsidian); `pele` blocks always use Pele.
+- Live Preview rebuild on enable/disable relies on the no-op-transaction +
+  resize nudge described above; if a stale widget survives, scrolling or the
+  "Re-render open notes" button refreshes it.
+- Copy/export before a diagram has mounted falls back to a headless Pele
+  `render()`, whose text measurement may differ slightly from the on-screen
+  font-measured SVG.
+- Pele targets Mermaid 12.1.0 syntax; diagrams using newer Mermaid-only
+  features may report `unsupported-diagram`.
+- Mehrpele: a nested Mehrpele diagram's own size is only known once it has
+  rendered, so its node settles after one re-measure pass; the node-resize
+  corner is desktop-only (hidden on mobile). Resizes inside the lightbox,
+  embedded notes and Bases views apply in memory only.
+- Node sizes: height moves in whole lines (1.5 em) and width within ~2 px;
+  coupled shapes (diamond, hexagon, …) cannot reach every W×H. The plugin
+  measures text with the canvas and the CLI with font metrics, so text may
+  wrap differently between them even though the boxes match. Box handles are
+  desktop-only. Mindmap sizes do not survive Canvas (the conversion writes
+  mindmaps back as plain text nodes). Resetting a media node's content keeps
+  its box entry. Markdown-string labels (`` "`**…**`" ``, shape-data `label:`)
+  never split a bold/italic/code span when re-wrapped, so the span sets the
+  narrowest width, and a widened one may still break between styled runs at
+  Pele's wrapping width (the box is still the size you set). A label with an
+  icon prefix (`fa:fa-car Drive`) gets a leading space. Extra class/entity
+  height goes into the name compartment. A failed write (the block could not
+  be located) leaves the diagram as the note has it.
+- Edit toolbar: in Mehrpele blocks a quoted (Markdown) label is HTML over the
+  SVG, so Text size is not offered for it, and a `color:` style does not
+  recolour its text. Edges sharing one `&` arrow (`A & B --> C`) change their
+  arrow and label together and cannot be deleted one by one. State diagrams
+  have no shape, line or node-delete actions, class diagrams have only colour
+  and size, and mindmaps have no colour. Turning a bare mindmap line into a
+  shape gives it an id made from its text. Subgraph titles written bare and
+  with spaces (`subgraph Some title`) are re-written quoted. A plain block
+  that switches to Mehrpele makes all of its existing quoted labels Markdown.
+  The inline editor relies on Obsidian internals (the embeddable Markdown
+  editor) and falls back to a text box if they change. With Obsidian's
+  *native menus* (macOS default) the shape/size/arrow menus are OS menus.
+  Selection is per diagram (a click in another diagram starts a new one) and
+  the marquee picks nodes only. A sibling of a node without parents is added
+  unconnected, and which side a sibling lands on is up to the layout (the
+  line goes before or after the node's own). Suggestions need the Repair LLM
+  provider set up and send the diagram source to it. The menu can cover
+  neighbouring nodes. Follow-ups after a write (open the editor on a new
+  node, keep the selection) wait for the diagram to settle, up to 4 s.
+- Reflow: switch points come from text measurement, so the plugin (canvas)
+  and the CLI (font metrics) can switch a few px apart. Mehrpele diagrams
+  switch direction with their reservations kept, but the label max-width
+  ladder (re-wrapping Markdown labels narrower) is not implemented: reserved
+  labels never wrap, so the flowchart wrap steps don't narrow them. Sequence
+  diagrams re-wrap messages in many small steps (Pele's own reflow), each
+  with the 32 px band. The Reading view keeps the reading position by
+  re-measuring its section after a re-layout (private renderer API,
+  feature-detected; a frame switching direction far above can still shift the
+  view by up to about one line height). Mehrpele Bases cards and Canvas
+  portals keep their previous sizing; Canvas text cards fit their box. The
+  Mehrpele lightbox does not pan a diagram that overflows at the floor.
+  Proportional charts (xychart, sankey, quadrant) follow the width without a
+  hysteresis band; with classic (non-overlay) scrollbars a page scrollbar
+  toggling can re-render them once per toggle.
+
+## Network use, accounts and files
+
+Mehrpele renders everything locally. It sends nothing anywhere unless you turn on one of the
+features below. It has no telemetry, no ads and no paid features.
+
+**Network use (all off by default):**
+
+| Feature | Service contacted | What is sent | Why |
+|---|---|---|---|
+| Repair › LLM tier, provider *Anthropic* | `api.anthropic.com` | The broken diagram's source and the parse error | Ask the model for a fixed diagram |
+| Repair › LLM tier, provider *OpenAI-compatible* | `api.openai.com`, or the base URL you enter | Same as above | Same as above |
+| Repair › LLM tier, *OpenAI-compatible* with a local base URL (for example Ollama) | Your own machine | Same as above | Same as above, without leaving your machine |
+| Repair › LLM › list Ollama models (button) | `localhost:11434` (your own machine) | Nothing; reads the model list | Fill the model picker |
+| Repair › Jev tier | `api.typesafe.ai` | Candidate diagram sources | Rank tied repair candidates |
+| Edit toolbar › suggestions | The Repair LLM provider you set up | The diagram source | Suggest nodes and labels |
+| Allow remote images (render policy) | Any `http`/`https` image URL written in a diagram | A normal image request | Show images the diagram links to |
+| Mehrpele › Web pages in nodes | Any page URL written in a diagram | A normal page load in a sandboxed webview | Show the page inside the node |
+| Open in Pele playground (context menu) | `pele.run`, in your browser | The diagram source, in the URL | Open the diagram in the online playground |
+| Settings › Learn › Tour notes › Install | `github.com` (this plugin's release downloads) | A normal file request | Download the tour notes (about 14 KB). The file is checked against a SHA-256 pinned in the plugin and is used as data only, never run as code |
+
+**Accounts:** the Anthropic, OpenAI and Jev tiers need an account and an API key with that
+service. Keys are kept in Obsidian's SecretStorage, never in `data.json`.
+
+**Files:** Mehrpele reads and writes only inside your vault. It does not run programs or
+install anything outside it.
+
+## Companion plugins
+
+Some features use other community plugins when you have them. Mehrpele never installs them; its
+settings only link to their pages in Obsidian's plugin browser.
+
+| Plugin (id) | Needed by |
+|---|---|
+| Excalidraw (`obsidian-excalidraw-plugin`) 2.29.0 or later | The Excalidraw feature |
+| Datacore (`datacore`) | Datacore diagrams |
+| Breadcrumbs (`breadcrumbs`) | Breadcrumbs diagrams |
+| TaskNotes (`tasknotes`) | TaskNotes diagrams |
+| Extended Graph (`extended-graph`) | The Extended Graph integration |
+| Advanced Canvas (`advanced-canvas`) | Optional; adds to the Canvas feature |
+
+## Third-party code
+
+The release bundle (`main.js`) includes:
+
+- [pele](https://github.com/obsidianmd/pele) 1.13.0, MIT License.
+- [monkey-around](https://github.com/pjeby/monkey-around), ISC License.
+
+Extended Graph integration reads that plugin's in-memory settings only; none of its code is used.
+
+Mehrpele blocks were inspired by [Mehrmaid](https://github.com/huterguier/obsidian-mehrmaid); none of its code is used.
+
+## License
+
+[MIT](LICENSE)

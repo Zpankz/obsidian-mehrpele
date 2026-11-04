@@ -1,0 +1,2248 @@
+/* Pele Mermaid — theme via Obsidian CSS variables (recolours without re-render). */
+.pele-host {
+  /* Obsidian 1.15 core-Pele theme hooks first (--mermaid-*, --font-mermaid; themes and
+     snippets target these), then the pre-1.15 Obsidian variables. */
+  /* Pele uses --pele-bg for edge-label backgrounds, pie slice separators/labels and
+     gantt bar labels (never a full-diagram background), so it must be the real note
+     background, not transparent. */
+  --pele-bg: var(--mermaid-background, var(--background-primary));
+  --pele-fg: var(--mermaid-text-color, var(--text-normal));
+  --pele-muted: var(--mermaid-muted-color, var(--text-muted));
+  --pele-line: var(--mermaid-line-color, var(--text-normal));
+  --pele-surface: var(--mermaid-surface, var(--background-secondary));
+  --pele-surface-alt: var(--mermaid-surface-alt, var(--background-modifier-hover));
+  --pele-border: var(--mermaid-border-color, var(--background-modifier-border));
+  --pele-accent: var(--mermaid-accent, var(--interactive-accent));
+  --pele-font: var(--font-mermaid, var(--font-text));
+  --pele-font-mono: var(--font-monospace);
+  --pele-radius: var(--mermaid-radius, var(--radius-s));
+  --pele-critical: var(--mermaid-critical, var(--color-red));
+  --pele-error: var(--mermaid-error, var(--text-error));
+  --pele-title-weight: var(--mermaid-title-weight, var(--font-bold, bold));
+  --pele-heading-weight: var(--mermaid-heading-weight, var(--font-semibold, 600));
+  --pele-bold-weight: var(--mermaid-bold-weight, var(--font-bold, bold));
+  --pele-series-1: var(--mermaid-color-1, var(--color-red));
+  --pele-series-2: var(--mermaid-color-2, var(--color-orange));
+  --pele-series-3: var(--mermaid-color-3, var(--color-yellow));
+  --pele-series-4: var(--mermaid-color-4, var(--color-green));
+  --pele-series-5: var(--mermaid-color-5, var(--color-cyan));
+  --pele-series-6: var(--mermaid-color-6, var(--color-blue));
+  --pele-series-7: var(--mermaid-color-7, var(--color-purple));
+  --pele-series-8: var(--mermaid-color-8, var(--color-pink));
+}
+
+/* Obsidian ≤1.14 inverts `.theme-dark .mermaid > svg` for mermaid.js output; Pele is themed by
+   the variables above, so cancel it on our hosts (they carry `mermaid` for core's selectors). */
+.pele-host.mermaid > svg {
+  filter: none;
+}
+
+/* Core 1.15's `.mermaid .pele a.internal-link` rule, for older Obsidian too. */
+.pele-host .pele a.internal-link {
+  fill: var(--link-color);
+}
+
+/* Live Preview: keep Pele's zoom controls clear of the code block's edit button (core 1.15 values). */
+.markdown-source-view.mod-cm6 .cm-preview-code-block .pele-host.mermaid {
+  --pele-zoom-top: var(--size-2-2);
+  --pele-zoom-right: var(--size-4-10);
+}
+
+/* Native image-embed frame around every diagram. Native classes (.image-embed,
+   .image-wrapper, .image-resize-corner, .embed-actions, .lightbox*) are styled
+   by Obsidian's app.css; only SVG-specific sizing lives here. */
+/* Two classes so this beats app.css's `.cm-content .image-embed { width: fit-content }`. */
+.image-embed.pele-embed {
+  position: relative;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--size-4-3) var(--size-4-4);
+}
+
+/* Diagram centred in the frame; the wrapper shrink-wraps the SVG so the
+   resize corner sits on the diagram's own corner, like a native image. */
+.pele-embed .pele-host {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+.pele-embed .pele-host svg.pele {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+
+/* Responsive reflow: the SVG carries its display width inline (never above
+   1×, floored, see reflow-frame.ts); a `width=N` wrapper is the layout box and
+   the diagram sits centred in it. Legacy sizing (reflow off, or
+   `%% pele-reflow off %%`): the SVG fills a resized wrapper. */
+.pele-embed.pele-legacy-size .pele-host.has-width svg.pele {
+  width: 100%;
+}
+
+/* Below the shrink floor the diagram scrolls instead of shrinking further. */
+.pele-embed .pele-mount.is-scrolling {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.pele-embed .pele-mount.is-scrolling > svg.pele {
+  margin-inline: 0;
+}
+
+/* The frame box of a `width=N` diagram: visible on hover and while dragging,
+   so room around a smaller diagram reads as room, not as a bug. */
+@media (hover: hover) {
+  .pele-embed:not(.pele-legacy-size):not(.pele-nested):hover > .pele-host.has-width {
+    outline: 1px dashed var(--background-modifier-border);
+    outline-offset: 2px;
+  }
+}
+
+.pele-embed .pele-host.is-sizing-box {
+  outline: 1px dashed var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Accessible name of a frame (aria-labelledby): read by screen readers,
+   never shown, and no aria-label for Obsidian to turn into a tooltip. */
+.pele-a11y-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pele-embed.is-resizing .pele-host svg.pele {
+  pointer-events: none;
+}
+
+/* app.css scopes the corner to .cm-content; mirror it for our frames. */
+.pele-embed .image-resize-corner {
+  display: block;
+  position: absolute;
+  z-index: 1;
+  cursor: nwse-resize;
+  bottom: 0;
+  inset-inline-end: 0;
+  width: 30px;
+  height: 30px;
+}
+
+/* Actions sit in the frame's top-right corner, not over the diagram.
+   Mirrors app.css's .cm-content .image-embed rules so Reading view and
+   embeds get the same hover UX as Live Preview. */
+.pele-embed > .embed-actions {
+  position: absolute;
+  top: var(--size-4-2);
+  inset-inline-end: 8px;
+  z-index: 2;
+  display: flex;
+  gap: var(--size-2-1);
+  opacity: 0;
+  transition: opacity 0.07s ease-out;
+}
+
+.pele-embed .embed-action {
+  padding: var(--size-2-2) var(--size-2-3);
+  display: flex;
+  color: var(--embed-action-color);
+  border-radius: var(--embed-action-radius);
+  cursor: var(--cursor);
+}
+
+.pele-embed .image-resize-corner::after {
+  position: absolute;
+  display: block;
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-bottom: var(--icon-stroke) solid var(--text-muted);
+  border-inline-end: var(--icon-stroke) solid var(--text-muted);
+  border-end-end-radius: 4px;
+  inset-inline-end: 6px;
+  bottom: 6px;
+  opacity: 0;
+}
+
+@media (hover: hover) {
+  .pele-embed .embed-action:hover {
+    background-color: var(--background-modifier-hover);
+  }
+  .pele-embed:hover > .embed-actions,
+  .pele-embed:hover .image-resize-corner::after {
+    opacity: 1;
+  }
+}
+
+.pele-embed.is-resizing > .embed-actions,
+.pele-embed.is-resizing .image-resize-corner::after {
+  opacity: 1;
+}
+
+.pele-embed.is-resizing .image-resize-corner::after {
+  border-color: var(--color-accent);
+}
+
+.is-mobile .pele-embed > .embed-actions {
+  opacity: 1;
+}
+
+/* Keyboard (src/a11y.ts): a focused action shows its bar and a focus ring,
+   the same ring as Obsidian's .clickable-icon:focus-visible. */
+.pele-embed > .embed-actions:has(.embed-action:focus-visible),
+.pele-host .mehrpele-embed > .pele-origin-actions:has(.embed-action:focus-visible) {
+  opacity: 1;
+}
+
+.pele-embed .embed-action:focus-visible,
+.pele-floating-actions .embed-action:focus-visible,
+.pele-host .pele-origin-actions .embed-action:focus-visible,
+.mehrpele-view-panel-tab:focus-visible,
+.mehrpele-view-bar-title.is-clickable:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+/* A clipped action bar (nested frames) floats above the diagram while
+   hovered (src/edit/float-actions.ts): body-level, unscaled, always shown. */
+.pele-floating-actions {
+  position: fixed;
+  z-index: var(--layer-popover);
+  background: color-mix(in srgb, var(--background-primary) 85%, transparent);
+  border-radius: var(--radius-s);
+}
+
+.pele-floating-actions > .embed-actions {
+  display: flex;
+  gap: var(--size-2-1);
+}
+
+.pele-floating-actions .embed-action {
+  padding: var(--size-2-2) var(--size-2-3);
+  display: flex;
+  color: var(--embed-action-color);
+  border-radius: var(--embed-action-radius);
+  cursor: var(--cursor);
+}
+
+@media (hover: hover) {
+  .pele-floating-actions .embed-action:hover {
+    background-color: var(--background-modifier-hover);
+  }
+}
+
+.pele-embed .pele-error {
+  margin-inline: auto;
+}
+
+.pele-embed .pele-mount {
+  width: 100%;
+}
+
+/* Companion overlay (api FrameHandle.overlay): host-owned layers above the diagram.
+   Clicks pass through; a companion opts children back in with pointer-events. */
+.pele-host > .mehrpele-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.mehrpele-overlay > .mehrpele-overlay-layer {
+  position: absolute;
+  inset: 0;
+}
+
+/* Below the shrink floor the mount scrolls (and so clips on both axes): clip the overlay
+   the same way, so badges of nodes scrolled out of view don't show past the frame. */
+.pele-host:has(> .pele-mount.is-scrolling) > .mehrpele-overlay {
+  overflow: clip;
+}
+
+.pele-source-panel {
+  white-space: pre-wrap;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 0.5em 0.75em;
+  margin-top: 0.5em;
+  overflow-x: auto;
+}
+
+/* Repair. */
+.pele-repair-button {
+  margin-top: 0.5em;
+}
+
+.pele-diff {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-smaller, 0.85em);
+  white-space: pre-wrap;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.pele-diff-add {
+  color: var(--color-green);
+}
+
+.pele-diff-del {
+  color: var(--color-red);
+}
+
+.pele-modal-buttons {
+  display: flex;
+  gap: 0.5em;
+  justify-content: flex-end;
+  margin-top: 1em;
+}
+
+/* Round-5 repair slots: hidden while empty. */
+.pele-repair-slot {
+  display: none;
+}
+
+.pele-mehrpele-hint {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+  padding: 2px 0 4px;
+}
+
+.pele-lossy-note {
+  color: var(--text-warning, var(--text-error));
+}
+.pele-repair-slot:not(:empty) {
+  display: contents;
+}
+
+/* Lightbox media wrapper carries .pele-host so the cloned SVG keeps theme vars. */
+.lightbox .media-wrapper.pele-host svg.pele {
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+}
+
+.lightbox.is-zoomed .media-wrapper.pele-host svg.pele {
+  cursor: grab;
+}
+
+.pele-error {
+  color: var(--text-error);
+  white-space: pre-wrap;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-smaller, 0.85em);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 0.5em 0.75em;
+  margin-top: 0.5em;
+  overflow-x: auto;
+}
+
+/* Pele's mount() draws its own inline error; the frame shows a richer one below. */
+.pele-mount > .pele.pele-error {
+  display: none;
+}
+/* Mehrpele lightbox: the mount host shrink-wraps the SVG (overlay origin). */
+.pele-mehrpele-lightbox-host {
+  position: relative;
+  /* Labels measure and render at the note's text size, as in the note. */
+  font-size: var(--font-text-size);
+  width: fit-content;
+  max-width: 100%;
+  margin: auto;
+}
+
+.pele-mehrpele-lightbox-host.is-scaled > .mehrpele-mount > svg.pele {
+  width: 100%;
+  height: auto;
+}
+
+/* Mehrpele overlay styles — appended to the plugin's styles.css on integration
+. Everything lives under .pele-host so Obsidian theme
+   variables apply to label HTML exactly as in Reading view. */
+
+.pele-host .mehrpele-frame {
+  position: relative;
+}
+
+/* The overlay is positioned from the SVG's top-left corner: the mount box
+   shrink-wraps the SVG (centred in a wider `width=N` box) instead of letting
+   a narrower SVG centre inside it. */
+.pele-embed:not(.pele-legacy-size) > .pele-host > .pele-mount.mehrpele-frame {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+.pele-embed:not(.pele-legacy-size) > .pele-host > .pele-mount.mehrpele-frame.is-scrolling {
+  width: 100%;
+}
+
+.pele-embed:not(.pele-legacy-size) > .pele-host > .mehrpele-frame > .mehrpele-mount > svg.pele {
+  margin-inline: 0;
+}
+
+.pele-host .mehrpele-mount {
+  position: relative;
+}
+
+/* Off-screen measurement host: laid out (so offsets are real) but invisible. */
+.pele-host .mehrpele-measure-host {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  max-width: 480px;
+}
+
+.pele-host .mehrpele-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pele-host .mehrpele-overlay-item {
+  position: absolute;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  text-align: center;
+}
+
+.pele-host .mehrpele-label {
+  display: inline-block;
+}
+
+/* Intrinsic content wrapper inside the stretched overlay item: sized by its
+   content only (never by the reserved box), so measuring it can shrink a
+   reservation. */
+.pele-host .mehrpele-intrinsic {
+  display: inline-block;
+  width: max-content;
+  height: auto;
+  flex: none;
+  align-self: center;
+  /* Laid out 1:1 (SVG units), scaled with the diagram by overlay.ts. */
+  transform-origin: center center;
+}
+
+/* Block margins (paragraphs, callouts, tables, display math) belong to the
+   note flow, not to a label: trim them at the label's edges so the reserved
+   box is content + Pele's own padding. */
+.pele-host .mehrpele-label > :first-child,
+.pele-host .mehrpele-label > :first-child > :first-child {
+  margin-top: 0;
+}
+
+.pele-host .mehrpele-label > :last-child,
+.pele-host .mehrpele-label > :last-child > :last-child {
+  margin-bottom: 0;
+}
+
+.pele-host .mehrpele-label .callout {
+  margin: 0;
+}
+
+/* Image embeds: block-level image, no inline baseline gap under it. */
+.pele-host .mehrpele-embed-image .internal-embed,
+.pele-host .mehrpele-embed-image img {
+  display: block;
+}
+
+.pele-host .mehrpele-embed-image p {
+  margin: 0;
+}
+
+/* labels.ts gives image labels an explicit, aspect-correct box from the
+   image's natural size (fitted to the embed maxima, never clipped); the
+   image fills it. Before the image decodes the label's max-width/height
+   bound it. */
+.pele-host .mehrpele-embed-image img {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/* Node content with a resize corner. */
+.pele-host .mehrpele-embed-image,
+.pele-host .mehrpele-embed,
+.pele-host .mehrpele-diagram {
+  position: relative;
+}
+
+.pele-host .mehrpele-node-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.07s ease-out;
+  /* Constant on-screen size at any diagram zoom: undo the content scale
+     (overlay.ts sets --mehrpele-ui-counter on each intrinsic wrapper). */
+  scale: var(--mehrpele-ui-counter, 1);
+  transform-origin: 100% 100%;
+}
+
+.pele-host .mehrpele-node-resize::after {
+  position: absolute;
+  content: "";
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-bottom: var(--icon-stroke, 2px) solid var(--text-muted);
+  border-right: var(--icon-stroke, 2px) solid var(--text-muted);
+  border-bottom-right-radius: 3px;
+}
+
+@media (hover: hover) {
+  .pele-host .mehrpele-label:hover > .mehrpele-node-resize {
+    opacity: 1;
+  }
+}
+
+.pele-host .mehrpele-resizing > .mehrpele-node-resize {
+  opacity: 1;
+}
+
+.pele-host .mehrpele-resizing > .mehrpele-node-resize::after {
+  border-color: var(--color-accent);
+}
+
+.is-mobile .pele-host .mehrpele-node-resize {
+  display: none;
+}
+
+/* Nested diagrams: a real frame inside the node, compact chrome. */
+.pele-host .mehrpele-diagram > .pele-embed.pele-nested {
+  width: auto;
+  padding: 0;
+}
+
+.pele-host .pele-embed.pele-nested > .embed-actions {
+  top: 2px;
+  inset-inline-end: 2px;
+  background: color-mix(in srgb, var(--background-primary) 85%, transparent);
+  border-radius: var(--radius-s);
+  /* Our chrome keeps its on-screen size while the nested diagram scales. */
+  scale: var(--mehrpele-ui-counter, 1);
+  transform-origin: 100% 0;
+}
+
+.pele-host .pele-embed.pele-nested > .pele-host > .image-resize-corner {
+  scale: var(--mehrpele-ui-counter, 1);
+  transform-origin: 100% 100%;
+}
+
+/* Only the hovered frame shows its corner (not every nested one). */
+.pele-embed:hover .pele-nested:not(:hover) .image-resize-corner::after {
+  opacity: 0;
+}
+
+/* The code panel takes the nested frame's width (wrapping) instead of
+   widening the node: width 0 + min-width 100% adds nothing to the frame's
+   intrinsic width. */
+.pele-host .pele-nested > .pele-source-panel {
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  text-align: start;
+  font-size: var(--font-smaller);
+}
+
+.pele-host .pele-nested > .pele-source-panel code {
+  white-space: pre-wrap;
+}
+
+.pele-host .mehrpele-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.pele-host .mehrpele-embed {
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  box-sizing: border-box;
+}
+
+/* Embed viewports (viewport.ts): the label box is the viewport, laid out at
+   the embed's UI scale; the embedded view fills all of it at any size
+   instead of keeping its own fixed height (base-graph's 400px canvas,
+   Obsidian's content-sized .bases-embed), so enlarging a node never leaves
+   a stale clip line. Views re-lay out through their own ResizeObservers. */
+.pele-host .mehrpele-embed > .internal-embed,
+.pele-host .mehrpele-embed > p > .internal-embed {
+  max-width: none;
+}
+
+/* Fixed-size boxes (.base / .canvas / explicit |WxH): the embed chain is a
+   full-height flex column; the view takes what the header leaves. */
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p:first-child {
+  height: 100%;
+  margin: 0;
+}
+
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > .internal-embed,
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .internal-embed {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .bases-embed > :not(.bases-view),
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > .bases-embed > :not(.bases-view) {
+  flex: none;
+}
+
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .bases-embed > .bases-view,
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > .bases-embed > .bases-view {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+
+/* Views with their own fixed minimum (base-graph 400px, Mehrpele diagram
+   view 240px) fill the view box instead. */
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .bases-embed > .bases-view > .base-graph,
+.pele-host .mehrpele-embed:not(.mehrpele-embed-auto) > p > .bases-embed > .bases-view.mehrpele-bases-view {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Note embeds: one scroller (the node viewport), no inner 4000px cap. */
+.pele-host .mehrpele-embed > p > .markdown-embed > .markdown-embed-content,
+.pele-host .mehrpele-embed > .markdown-embed > .markdown-embed-content {
+  max-height: none;
+  overflow: visible;
+}
+
+/* Only the embed viewport itself takes the pointer: the node padding
+   around it passes through (to the frame's resize corner when a bottom-right
+   node reaches the frame corner). */
+.pele-host .mehrpele-viewport-item {
+  pointer-events: none;
+  /* Above the frame's own resize corner (z-index 1): where an embed's
+     viewport covers it, the embed and its node handle get the pointer. */
+  z-index: 2;
+}
+
+.pele-host .mehrpele-viewport-item .mehrpele-label {
+  pointer-events: auto;
+}
+
+/* One resize handle per embed node: while the node is hovered (or being
+   resized) the enclosing diagram's width corner steps aside. */
+.pele-embed:has(> .pele-host .mehrpele-viewport-item:hover) > .pele-host > .image-resize-corner,
+.pele-embed:has(> .pele-host .mehrpele-resizing) > .pele-host > .image-resize-corner {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Note embeds without an explicit height: fixed width, height follows the
+   content up to the embed maximum (labels.ts sets max-height), then scrolls. */
+.pele-host .mehrpele-embed-auto {
+  height: auto;
+}
+
+.pele-host .mehrpele-embed-lazy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s);
+}
+
+.pele-host .mehrpele-embed-chip {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.pele-host .mehrpele-overlay-item a {
+  min-height: 24px;
+}
+
+/* Edge/cluster labels sit on a background so the line doesn't strike through
+   (Pele's own edge-label rect uses the diagram bg, which our theme maps to
+   transparent — use the note background, near-opaque). */
+.pele-host .mehrpele-overlay-item[data-shape="edge"] .mehrpele-label,
+.pele-host .mehrpele-overlay-item[data-shape="cluster"] .mehrpele-label {
+  background: color-mix(in srgb, var(--background-primary) 92%, transparent);
+  padding: 1px 5px;
+  border-radius: var(--pele-radius, var(--radius-s));
+}
+
+/* Tags and links never split mid-token; the re-measure pass grows the box. */
+.pele-host .mehrpele-label a,
+.pele-host .mehrpele-label .tag {
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+/* Bases view */
+.mehrpele-bases-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 240px;
+}
+
+.mehrpele-bases-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.mehrpele-copy-source {
+  align-self: flex-start;
+}
+
+/* Portal (.canvas) embeds: the "Open original" action in the node corner. */
+.pele-host .mehrpele-embed > .pele-origin-actions {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  z-index: 3;
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.07s ease-out;
+  background: color-mix(in srgb, var(--background-primary) 85%, transparent);
+  border-radius: var(--radius-s);
+}
+
+.pele-host .pele-origin-actions .embed-action {
+  padding: var(--size-2-2) var(--size-2-3);
+  display: flex;
+  color: var(--embed-action-color);
+  border-radius: var(--embed-action-radius);
+  cursor: var(--cursor);
+}
+
+@media (hover: hover) {
+  .pele-host .mehrpele-embed:hover > .pele-origin-actions {
+    opacity: 1;
+  }
+  .pele-host .pele-origin-actions .embed-action:hover {
+    background-color: var(--background-modifier-hover);
+  }
+}
+
+.is-mobile .pele-host .mehrpele-embed > .pele-origin-actions {
+  opacity: 1;
+}
+/* Pele integrations — append to styles.css (scoped, theme via --pele-* only). */
+
+.pele-integration-notice {
+  padding: 6px 10px;
+  border: 1px dashed var(--pele-border, var(--background-modifier-border));
+  border-radius: var(--pele-radius, var(--radius-s));
+  color: var(--pele-muted, var(--text-muted));
+  font-size: var(--font-ui-smaller);
+}
+
+/* Generated semantic classes (Pele copies classDef classes onto nodes). */
+.pele-host .pele-node.pele-start > rect,
+.pele-host .pele-node.pele-start > polygon,
+.pele-host .pele-node.pele-start > circle {
+  stroke: var(--pele-accent, var(--interactive-accent));
+  stroke-width: 2px;
+}
+
+.pele-host .pele-node.pele-done {
+  opacity: 0.75;
+}
+
+.pele-host .pele-node.pele-blocked > rect,
+.pele-host .pele-node.pele-crit > rect {
+  stroke: var(--pele-critical, var(--color-red));
+}
+
+.pele-host .pele-node.pele-active > rect {
+  stroke: var(--pele-accent, var(--interactive-accent));
+}
+
+.pele-datacore-mount {
+  width: 100%;
+}
+
+/* Per-node box handles (src/node-handles.ts): a layer over the diagram whose
+   only hit target is the handle itself; outline and ghost never take input. */
+.pele-host .pele-node-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Above the frame corner (4): only the node handle takes pointer events. */
+  z-index: 5;
+}
+
+.pele-host .pele-node-ghost {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  border-radius: 4px;
+}
+
+/* Hover outline: paths on the node's own shapes, in the layer's px
+   (node-outline.ts), so it hugs diamonds, circles and stadiums too. */
+.pele-host svg.pele-node-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.pele-host svg.pele-node-outline path {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+
+/* Drag ghost: the node's own outline scaled to the size the solver will
+   draw (node-handles.ts), constant stroke at any scale; a plain box only
+   when the node has no outline. */
+.pele-host svg.pele-node-ghost-shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.pele-host svg.pele-node-ghost-shape path {
+  fill: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+  stroke: var(--interactive-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.pele-host .pele-node-ghost.is-boxed {
+  border: 1.5px dashed var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+}
+
+.pele-host .pele-node-ghost-size {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  translate: -50% 4px;
+  transform-origin: 50% 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: var(--shadow-s);
+}
+
+.pele-host .pele-node-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  cursor: nwse-resize;
+  touch-action: none;
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 3px;
+  background: var(--background-primary);
+}
+
+.pele-host .pele-node-handle:hover,
+.pele-host.is-node-resizing .pele-node-handle {
+  background: var(--interactive-accent);
+}
+
+/* The frame's corner sits above the diagram; a node handle that overlaps
+   it (a node in the bottom-right corner) wins only where it overlaps. */
+.pele-embed .pele-host > .image-resize-corner {
+  z-index: 4;
+}
+
+.is-mobile .pele-host .pele-node-handles {
+  display: none;
+}
+
+.pele-undo-button {
+  margin-inline-start: var(--size-2-2);
+}
+
+/* Palette presets — one class family (canvas1…canvas6; the edit toolbar's
+   earlier pele_c1…pele_c6 still themed): nodes, subgraphs and preset-coloured
+   edges follow the theme's palette like Obsidian Canvas. Generated by
+   pele-render canvas/palette.ts presetThemeCss(); keep in sync
+   (tests/canvas-convert). */
+.pele-node.canvas1 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.canvas1 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.canvas1 > rect, .pele-node.pele_c1 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.pele_c1 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.pele_c1 > rect { fill: rgba(var(--color-red-rgb), 0.1) !important; stroke: rgb(var(--color-red-rgb)) !important; }
+.pele-edge[style*="stroke:#e93147"] { stroke: rgb(var(--color-red-rgb)) !important; }
+.pele-edge[style*="stroke:#e93147"] .pele-marker { fill: rgb(var(--color-red-rgb)) !important; }
+.pele-edge-label text[style*="fill:#e93147"] { fill: rgb(var(--color-red-rgb)) !important; }
+.pele-node.canvas2 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.canvas2 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.canvas2 > rect, .pele-node.pele_c2 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.pele_c2 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.pele_c2 > rect { fill: rgba(var(--color-orange-rgb), 0.1) !important; stroke: rgb(var(--color-orange-rgb)) !important; }
+.pele-edge[style*="stroke:#ec7500"] { stroke: rgb(var(--color-orange-rgb)) !important; }
+.pele-edge[style*="stroke:#ec7500"] .pele-marker { fill: rgb(var(--color-orange-rgb)) !important; }
+.pele-edge-label text[style*="fill:#ec7500"] { fill: rgb(var(--color-orange-rgb)) !important; }
+.pele-node.canvas3 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.canvas3 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.canvas3 > rect, .pele-node.pele_c3 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.pele_c3 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.pele_c3 > rect { fill: rgba(var(--color-yellow-rgb), 0.1) !important; stroke: rgb(var(--color-yellow-rgb)) !important; }
+.pele-edge[style*="stroke:#e0ac00"] { stroke: rgb(var(--color-yellow-rgb)) !important; }
+.pele-edge[style*="stroke:#e0ac00"] .pele-marker { fill: rgb(var(--color-yellow-rgb)) !important; }
+.pele-edge-label text[style*="fill:#e0ac00"] { fill: rgb(var(--color-yellow-rgb)) !important; }
+.pele-node.canvas4 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.canvas4 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.canvas4 > rect, .pele-node.pele_c4 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.pele_c4 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.pele_c4 > rect { fill: rgba(var(--color-green-rgb), 0.1) !important; stroke: rgb(var(--color-green-rgb)) !important; }
+.pele-edge[style*="stroke:#08b94e"] { stroke: rgb(var(--color-green-rgb)) !important; }
+.pele-edge[style*="stroke:#08b94e"] .pele-marker { fill: rgb(var(--color-green-rgb)) !important; }
+.pele-edge-label text[style*="fill:#08b94e"] { fill: rgb(var(--color-green-rgb)) !important; }
+.pele-node.canvas5 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.canvas5 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.canvas5 > rect, .pele-node.pele_c5 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.pele_c5 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.pele_c5 > rect { fill: rgba(var(--color-cyan-rgb), 0.1) !important; stroke: rgb(var(--color-cyan-rgb)) !important; }
+.pele-edge[style*="stroke:#00bfbc"] { stroke: rgb(var(--color-cyan-rgb)) !important; }
+.pele-edge[style*="stroke:#00bfbc"] .pele-marker { fill: rgb(var(--color-cyan-rgb)) !important; }
+.pele-edge-label text[style*="fill:#00bfbc"] { fill: rgb(var(--color-cyan-rgb)) !important; }
+.pele-node.canvas6 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.canvas6 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.canvas6 > rect, .pele-node.pele_c6 > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-node.pele_c6 > a > :is(rect,polygon,path,circle,ellipse):not(.pele-marker), .pele-cluster.pele_c6 > rect { fill: rgba(var(--color-purple-rgb), 0.1) !important; stroke: rgb(var(--color-purple-rgb)) !important; }
+.pele-edge[style*="stroke:#7852ee"] { stroke: rgb(var(--color-purple-rgb)) !important; }
+.pele-edge[style*="stroke:#7852ee"] .pele-marker { fill: rgb(var(--color-purple-rgb)) !important; }
+.pele-edge-label text[style*="fill:#7852ee"] { fill: rgb(var(--color-purple-rgb)) !important; }
+
+/* Diagram context menu (src/context-menu.ts): icon rows at the pointer, one
+   per section (copy, export, open, size), separated by space. */
+.pele-ctx-menu.menu {
+  position: fixed;
+  z-index: var(--layer-menu);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  width: max-content;
+  padding: var(--size-2-3);
+}
+.pele-ctx-row {
+  display: flex;
+  gap: var(--size-2-1);
+}
+.pele-ctx-item.clickable-icon {
+  width: var(--size-4-8, 32px);
+  height: var(--size-4-8, 32px);
+  padding: 0;
+  justify-content: center;
+}
+.pele-ctx-item.clickable-icon:focus-visible {
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+/* pele-edit: edit toolbar + inline label editor (src/edit) -------------------- */
+
+/* Canvas's floating menu, fixed over the diagram. */
+/* One z-order for the edit overlays:
+   menus/submenus (tooltip + 1) > Obsidian tooltips > toolbar > "+" buttons > outlines. */
+.pele-edit-menu {
+  position: fixed;
+  z-index: calc(var(--layer-popover) + 2);
+}
+body > .pele-edit-submenu.canvas-submenu {
+  position: fixed;
+  transform: none;
+  z-index: calc(var(--layer-tooltip) + 1);
+}
+/* Icon popovers (text size, shape, line and arrowheads): rows of glyph
+   buttons, grouped, in the colour palette's frame. */
+.pele-edit-submenu.pele-edit-iconpop {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: var(--size-2-2);
+}
+.pele-edit-iconpop .pele-pop-row {
+  display: flex;
+  gap: var(--size-2-1);
+  padding: var(--size-2-1) 0;
+}
+.pele-edit-iconpop .pele-pop-row + .pele-pop-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+/* Shapes: one column count for every row, equal cells aligned across groups;
+   groups are separated by space, not rules. */
+.pele-edit-iconpop.pele-shape-grid .pele-pop-row {
+  display: grid;
+  grid-template-columns: repeat(var(--pele-cols, 4), 32px);
+  padding: 1px 0;
+}
+.pele-edit-iconpop.pele-shape-grid .pele-pop-row + .pele-pop-row {
+  border-top: none;
+}
+.pele-edit-iconpop.pele-shape-grid .pele-pop-row.is-group-start {
+  margin-top: var(--size-4-2);
+}
+.pele-edit-iconpop .pele-pop-item {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+}
+.pele-edit-iconpop .pele-pop-item.is-active {
+  color: var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+.pele-edit-iconpop .pele-pop-item.is-disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.pele-edit-iconpop .pele-pop-item:focus-visible {
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+/* Shapes as Pele draws them: outline only, constant stroke at any size. */
+.pele-shape-glyph {
+  width: 22px;
+  height: 16px;
+  overflow: visible;
+}
+.pele-shape-glyph * {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25px;
+  vector-effect: non-scaling-stroke;
+}
+.pele-edge-glyph {
+  width: 24px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+}
+.pele-edit-iconpop .pele-pop-size span {
+  font-family: var(--font-interface);
+  font-weight: var(--font-semibold);
+  line-height: 1;
+}
+.pele-pop-size-s span {
+  font-size: 11px;
+}
+.pele-pop-size-m span {
+  font-size: 14px;
+}
+.pele-pop-size-l span {
+  font-size: 17px;
+}
+.pele-pop-size-xl span {
+  font-size: 20px;
+}
+.pele-edit-iconpop .pele-pop-note {
+  max-width: 200px;
+  padding: var(--size-2-2) var(--size-2-1) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.pele-edit-menu.is-selected .canvas-menu {
+  box-shadow: var(--shadow-s), 0 0 0 1px var(--color-accent);
+}
+
+/* Reset swatch: an outline disc in the swatches' own 24 px box (2 px border,
+   20 px disc), the icon centred on it; no native fill under the icon. The
+   palette is a body-level submenu, so scope to it, not the toolbar. */
+.pele-edit-submenu .canvas-color-picker-item.pele-edit-reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background-color: transparent;
+  color: var(--text-muted);
+  box-shadow: inset 0 0 0 1px var(--text-faint);
+}
+.pele-edit-submenu .canvas-color-picker-item.pele-edit-reset:hover {
+  color: var(--text-normal);
+  box-shadow: inset 0 0 0 1px var(--text-muted);
+}
+.pele-edit-submenu .canvas-color-picker-item.pele-edit-reset.is-active {
+  box-shadow: inset 0 0 0 1px var(--text-muted), 0 0 0 2px var(--text-muted);
+}
+.pele-edit-submenu .pele-edit-reset svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+/* Hover / selection outlines: clones of the element's own shapes (src/edit/outline.ts). */
+.pele-edit-outlines {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: var(--layer-popover);
+}
+/* Same paths as the node handles' hover outline (node-outline.ts): hover is
+   drawn the same way, selection is a solid 2 px line on the same path. */
+.pele-edit-outline > path {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.pele-edit-outline.is-hover > path {
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+.pele-edit-outline.is-selected > path {
+  stroke-width: 2;
+}
+/* Edges: a halo along the line. */
+.pele-edit-outline > path.is-line {
+  stroke-width: 6;
+  stroke-dasharray: none;
+  stroke-opacity: 0.35;
+}
+/* Wide invisible stroke so thin edges can be hovered. */
+.pele-host .pele-edit-hit {
+  fill: none !important;
+  stroke: transparent !important;
+  stroke-width: 12px;
+  stroke-dasharray: none;
+  pointer-events: stroke;
+}
+/* "+" buttons on a selected node's sides (add parent / child / sibling). */
+.pele-edit-plus.clickable-icon {
+  position: fixed;
+  z-index: calc(var(--layer-popover) + 1);
+  transition: opacity 120ms ease-out;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  background-color: var(--background-primary);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  box-shadow: var(--shadow-s);
+  opacity: 0.9;
+}
+.pele-edit-plus.clickable-icon:hover {
+  opacity: 1;
+  background-color: var(--color-accent);
+  color: var(--text-on-accent);
+}
+/* A diagram in its own tab / window (src/diagram-view.ts): full width, no
+   resize corner (its size would be written to the note's fence). */
+.pele-diagram-view {
+  padding: var(--size-4-6) var(--size-4-8);
+}
+.pele-diagram-view .image-resize-corner {
+  display: none;
+}
+/* Modifier-aware icons (src/edit/mod-icons.ts): the new glyph fades in. */
+.pele-mod-swap > svg {
+  animation: pele-mod-fade 140ms ease-out;
+}
+@keyframes pele-mod-fade {
+  from {
+    opacity: 0.15;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pele-mod-swap > svg {
+    animation: none;
+  }
+  .pele-edit-plus.clickable-icon {
+    transition: none;
+  }
+}
+/* Dragging a "+" (toolbar.ts startConnect): the live edge, in client px,
+   above the diagram and its outlines; a duplicate edge flashes. */
+svg.pele-connect-preview {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: visible;
+  pointer-events: none;
+  z-index: calc(var(--layer-popover) + 3);
+}
+svg.pele-connect-preview path {
+  fill: none;
+  stroke-linecap: round;
+}
+.pele-edit-menu.is-connect-hidden,
+.pele-edit-cluster.is-connect-hidden,
+.pele-edit-menu.is-empty {
+  visibility: hidden;
+}
+/* Node actions beside the bottom-right corner (the resize handle's): small,
+   faint at rest, coloured by what they do on hover. */
+.pele-edit-cluster {
+  position: fixed;
+  z-index: calc(var(--layer-popover) + 1);
+  display: flex;
+  gap: 1px;
+}
+.pele-edit-cluster .clickable-icon {
+  --icon-size: 14px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0.45;
+  transition: opacity 120ms ease-out, color 120ms ease-out;
+}
+.pele-edit-cluster .clickable-icon:hover,
+.pele-edit-cluster .clickable-icon:focus-visible {
+  opacity: 1;
+  background-color: var(--background-modifier-hover);
+}
+.pele-edit-cluster .is-edit:hover,
+.pele-edit-cluster .is-edit:focus-visible {
+  color: var(--color-blue);
+}
+.pele-edit-cluster .is-zoom:hover,
+.pele-edit-cluster .is-zoom:focus-visible {
+  color: var(--color-green);
+}
+.pele-edit-cluster .is-delete:hover,
+.pele-edit-cluster .is-delete:focus-visible {
+  color: var(--color-red);
+}
+.pele-host.is-pele-connecting,
+.pele-host.is-pele-connecting * {
+  cursor: crosshair;
+}
+.pele-edge.pele-edit-flash > path:not(.pele-marker) {
+  animation: pele-edge-flash 400ms ease-in-out 3;
+}
+@keyframes pele-edge-flash {
+  50% {
+    stroke: var(--interactive-accent);
+    stroke-width: 4px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pele-edge.pele-edit-flash > path:not(.pele-marker) {
+    animation: none;
+    stroke: var(--interactive-accent);
+  }
+}
+/* Out of the way while a submenu or menu is open. */
+.pele-edit-plus.clickable-icon.is-dimmed {
+  opacity: 0;
+  pointer-events: none;
+}
+.pele-edit-plus svg {
+  width: 14px;
+  height: 14px;
+}
+/* Marquee on empty diagram space. */
+.pele-edit-marquee {
+  position: fixed;
+  z-index: var(--layer-popover);
+  pointer-events: none;
+  border: 1px solid var(--color-accent);
+  background-color: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-radius: 2px;
+}
+/* Inline label editor: Obsidian's Markdown editor drawn in place of the label.
+   Centred on the label area (it grows from the centre), in the label's own
+   font, size, colour and alignment, on the node's fill, clipped to the
+   shape's radius. */
+.pele-inline-editor {
+  position: fixed;
+  z-index: var(--layer-popover);
+  box-sizing: border-box;
+  width: max-content;
+  max-height: 70vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 1px 6px;
+  background: var(--pele-inline-bg, var(--background-primary));
+  border-radius: var(--pele-inline-radius, var(--radius-s));
+  box-shadow: 0 0 0 1.5px var(--color-accent);
+  color: var(--pele-inline-color, var(--text-normal));
+  font-family: var(--pele-inline-font, var(--font-text));
+  font-size: var(--pele-inline-font-size, var(--font-text-size));
+  line-height: 1.35;
+  text-align: center;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.97);
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+.pele-inline-editor.is-open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.pele-inline-editor.is-closing {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.98);
+  pointer-events: none;
+}
+.pele-inline-editor.is-left {
+  text-align: left;
+}
+.pele-inline-editor .markdown-source-view.mod-cm6 {
+  --font-text-size: var(--pele-inline-font-size);
+  --font-text: var(--pele-inline-font);
+  --line-height-normal: 1.35;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+}
+.pele-inline-editor .markdown-source-view.mod-cm6 .cm-editor,
+.pele-inline-editor .markdown-source-view.mod-cm6 .cm-scroller {
+  background: transparent;
+  padding: 0;
+  overflow: visible;
+}
+.pele-inline-editor .markdown-source-view.mod-cm6 .cm-sizer {
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  max-width: none;
+}
+.pele-inline-editor .markdown-source-view.mod-cm6 .cm-contentContainer {
+  padding: 0;
+}
+.pele-inline-editor .markdown-source-view.mod-cm6 .cm-content {
+  padding: 0;
+  min-height: 1.35em;
+  color: inherit;
+  font-family: inherit;
+  text-align: inherit;
+  caret-color: var(--color-accent);
+}
+.pele-inline-editor .markdown-source-view.mod-cm6 .cm-line {
+  padding: 0;
+  text-align: inherit;
+}
+/* Tables, callouts and other blocks sit centred, as Mehrpele draws them. */
+body .pele-inline-editor .markdown-source-view.mod-cm6 .cm-content > .cm-embed-block {
+  width: fit-content !important;
+  max-width: 100%;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+.pele-inline-editor .pele-inline-textarea {
+  width: 100%;
+  min-width: 4em;
+  min-height: 1.35em;
+  resize: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+/* A faint key hint under the box (no tooltip over the diagram). */
+.pele-inline-hint {
+  position: fixed;
+  z-index: var(--layer-popover);
+  transform: translateX(-50%);
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--text-faint);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out 200ms;
+}
+.pele-inline-hint.is-open {
+  opacity: 0.85;
+}
+.pele-inline-suggestions {
+  position: fixed;
+  z-index: var(--layer-popover);
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  max-width: min(520px, 90vw);
+  padding: 4px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-s);
+}
+.pele-inline-chip {
+  font-size: var(--font-ui-smaller);
+  padding: 2px 8px;
+  height: auto;
+}
+.pele-inline-thinking {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pele-inline-editor,
+  .pele-inline-hint {
+    transition: none;
+  }
+}
+/* end pele-edit */
+
+/* === view-nodes: web / PDF / workspace views in Mehrpele nodes (src/mehrpele/views/views.css) === */
+
+/* The stage lives in the note's scroller (Reading view, Live Preview) so
+   re-rendered blocks adopt their live views without moving them; in the
+   lightbox it lives in the diagram frame. Zero-size, pointer-transparent;
+   docks are positioned over their slots by stage.ts. */
+.mehrpele-view-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.mehrpele-view-stage.is-frame-stage {
+  z-index: 3;
+}
+
+.mehrpele-view-probe {
+  position: absolute;
+  width: 100px;
+  height: 0;
+  visibility: hidden;
+}
+
+.mehrpele-view-dock {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  background-color: var(--background-primary);
+  border-radius: var(--radius-s);
+  contain: layout paint;
+  /* A notch at the bottom-right corner (the on-screen size of the node's
+     resize handle) lets the slot's own corner, under the dock, take the
+     pointer: drag to resize, double-click to reset. */
+  --mehrpele-view-notch: calc(18px * var(--mehrpele-view-counter, 1));
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--mehrpele-view-notch)), calc(100% - var(--mehrpele-view-notch)) calc(100% - var(--mehrpele-view-notch)), calc(100% - var(--mehrpele-view-notch)) 100%, 0 100%);
+}
+
+.is-mobile .mehrpele-view-dock,
+.mehrpele-view-dock.is-panel {
+  clip-path: none;
+}
+
+.mehrpele-view-dock.is-hidden {
+  display: none;
+}
+
+.mehrpele-view-dock.is-panel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.mehrpele-view-content {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Workspace views in a detached leaf fill the node; their own header is
+   hidden unless the view asks for it (header=1). */
+.mehrpele-view-content > .mehrpele-view-split {
+  width: 100%;
+  height: 100%;
+}
+
+.mehrpele-view-split > .workspace-leaf {
+  height: 100%;
+}
+
+.mehrpele-view-split:not(.mehrpele-view-has-header) .view-header {
+  display: none;
+}
+
+.mehrpele-view-content .view-content,
+.mehrpele-view-content .pdf-viewer-container,
+.mehrpele-view-content .markdown-preview-view {
+  overscroll-behavior: contain;
+}
+
+/* PDFs: Obsidian's PDF embed (Canvas file-card styling: no frame, full box). */
+.mehrpele-view-pdf {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.mehrpele-view-pdf.pdf-embed {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+.mehrpele-view-pdf > .internal-embed.pdf-embed,
+.mehrpele-view-pdf > p > .internal-embed.pdf-embed,
+.mehrpele-view-pdf > p:only-child {
+  height: 100%;
+  margin: 0;
+}
+
+/* Folder views: the generated base fills the node; only its view scrolls. */
+.mehrpele-view-folder {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.mehrpele-view-folder > .bases-embed {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+}
+
+.mehrpele-view-folder > .bases-embed > :not(.bases-view) {
+  flex: none;
+}
+
+.mehrpele-view-folder > .bases-embed > .bases-view {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.mehrpele-view-webview,
+.mehrpele-view-iframe {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background-color: white;
+}
+
+/* A drag in progress (node corner, frame corner, Obsidian's own grabbing):
+   web pages must not swallow the pointer (Canvas does the same). */
+body.mehrpele-view-dragging .mehrpele-view-dock :is(webview, iframe),
+body.is-grabbing .mehrpele-view-dock :is(webview, iframe) {
+  pointer-events: none;
+}
+
+/* Chrome: constant on-screen size at any diagram zoom, shown on hover, in
+   the bottom-left corner — views keep their own controls at the top (Bases
+   toolbar, PDF toolbar, graph settings) and the resize notch is bottom-right. */
+.mehrpele-view-bar {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 32px);
+  padding: 1px 2px 1px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+  scale: var(--mehrpele-view-counter, 1);
+  transform-origin: 0 100%;
+}
+
+.mehrpele-view-dock:hover > .mehrpele-view-bar,
+.mehrpele-view-dock:focus-within > .mehrpele-view-bar {
+  opacity: 1;
+}
+
+.mehrpele-view-bar-title {
+  overflow: hidden;
+  max-width: 220px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mehrpele-view-bar-title.is-clickable {
+  cursor: pointer;
+}
+
+.mehrpele-view-bar-title.is-clickable:hover {
+  color: var(--text-normal);
+}
+
+.mehrpele-view-bar-action {
+  --icon-size: var(--icon-xs);
+  padding: 2px;
+}
+
+.mehrpele-view-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  background-color: var(--background-secondary);
+}
+
+.mehrpele-view-placeholder.is-clickable {
+  cursor: pointer;
+}
+
+.mehrpele-view-placeholder.is-clickable:hover {
+  color: var(--text-normal);
+}
+
+.mehrpele-view-placeholder-icon {
+  --icon-size: var(--icon-l);
+}
+
+.mehrpele-view-placeholder-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.mehrpele-view-chip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  margin: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  pointer-events: auto;
+}
+
+.mehrpele-view-chip-icon {
+  --icon-size: var(--icon-s);
+  display: inline-flex;
+  color: var(--text-warning);
+}
+
+.mehrpele-view-chip-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-ui-smaller);
+}
+
+/* The slot (label element) is a transparent box: the dock under it takes
+   the pointer, except the slot's own resize corner (and error chips). */
+.pele-host .mehrpele-embed.mehrpele-view-slot {
+  overflow: hidden;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pele-host .mehrpele-viewport-item .mehrpele-label.mehrpele-view-slot {
+  pointer-events: none;
+}
+
+.pele-host .mehrpele-view-slot > .mehrpele-node-resize {
+  pointer-events: auto;
+  z-index: 6;
+}
+
+.pele-host .mehrpele-view-slot.is-view-hover > .mehrpele-node-resize {
+  opacity: 1;
+}
+
+/* Attached views (%% pele-view %%): hover button and anchored panel. */
+.mehrpele-view-attach-btn {
+  position: fixed;
+  z-index: var(--layer-popover);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.mehrpele-view-attach-btn:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.mehrpele-view-attach-icon {
+  --icon-size: var(--icon-xs);
+  display: inline-flex;
+}
+
+.mehrpele-view-panel {
+  position: fixed;
+  z-index: var(--layer-popover);
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+  height: 340px;
+  min-width: 240px;
+  min-height: 160px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+  resize: both;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-l);
+}
+
+.mehrpele-view-panel.is-expanded {
+  width: min(880px, calc(100vw - 16px));
+  height: min(640px, calc(100vh - 16px));
+}
+
+.mehrpele-view-panel.is-offscreen {
+  visibility: hidden;
+}
+
+.mehrpele-view-panel.is-hidden-node {
+  display: none;
+}
+
+.mehrpele-view-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.mehrpele-view-panel-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.mehrpele-view-panel-tab {
+  --icon-size: var(--icon-xs);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mehrpele-view-panel-tab:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.mehrpele-view-panel-tab.is-active {
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.mehrpele-view-panel-actions {
+  display: flex;
+  --icon-size: var(--icon-xs);
+}
+
+.mehrpele-view-panel-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Full bleed (src/mehrpele/bleed.ts): a one-element label covers its node's
+   rect exactly; no inline-block baseline gap; corners follow the node radius. */
+.pele-host .mehrpele-overlay-item.is-bleed > .mehrpele-intrinsic,
+.pele-host .mehrpele-overlay-item.is-bleed > .mehrpele-intrinsic > .mehrpele-label {
+  display: block;
+}
+
+.pele-host .mehrpele-overlay-item.is-bleed .mehrpele-label > pre,
+.pele-host .mehrpele-overlay-item.is-bleed .mehrpele-label > .el-pre > pre {
+  margin: 0;
+  min-height: 100%;
+  border-radius: 0;
+}
+
+/* ---- Note cards (note-card.ts): a `![[Note]]` node is the note, as a Canvas
+   file card: no embed chrome (title row, left border, link icon), Canvas's
+   own spacing, scrolling inside the node. Inline title and properties follow
+   the user's settings, as in Canvas. ---- */
+.pele-host .mehrpele-embed.mehrpele-note:not(.mehrpele-embed-auto) {
+  overflow: hidden;
+}
+
+.mehrpele-note-card.markdown-embed {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  box-sizing: border-box;
+  /* A card reads like the note, not like a centred node label. */
+  text-align: start;
+  /* Titles scale with the card's width (below). */
+  container-type: inline-size;
+  container-name: mehrpele-card;
+}
+
+.mehrpele-embed:not(.mehrpele-embed-auto) > .mehrpele-note-card.markdown-embed {
+  height: 100%;
+}
+
+.mehrpele-note-card.markdown-embed > .markdown-embed-link {
+  display: none;
+}
+
+.mehrpele-note-card > .markdown-embed-content {
+  max-height: none;
+}
+
+.mehrpele-embed:not(.mehrpele-embed-auto) > .mehrpele-note-card > .markdown-embed-content {
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.mehrpele-note-card > .markdown-embed-content > .markdown-preview-view {
+  padding: 0 var(--size-4-4);
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.mehrpele-note-card > .markdown-embed-content > .markdown-preview-view::before,
+.mehrpele-note-card > .markdown-embed-content > .markdown-preview-view::after {
+  content: " ";
+  display: block;
+  min-height: var(--size-4-2);
+  max-height: var(--size-4-4);
+  flex: 1 1 0;
+}
+
+/* Like a Canvas card, the note uses the card's full width instead of
+   centring at the editor's readable line width. */
+.mehrpele-note-card > .markdown-embed-content > .markdown-preview-view > .markdown-preview-sizer {
+  flex: 1 0 0;
+  max-width: none;
+  margin-inline: 0;
+}
+
+/* A small card doesn't get a full-size H1: the title scales with the card,
+   stays on one line and ends in an ellipsis instead of breaking mid-word. */
+.mehrpele-note-card .inline-title {
+  cursor: text;
+  font-size: clamp(1em, 10cqi, var(--inline-title-size));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mehrpele-note-card .markdown-preview-view h1 {
+  font-size: clamp(1em, 9cqi, var(--h1-size));
+}
+
+.mehrpele-note-card .markdown-preview-view h2 {
+  font-size: clamp(1em, 8cqi, var(--h2-size));
+}
+
+.mehrpele-note-card .markdown-preview-view h3 {
+  font-size: clamp(1em, 7cqi, var(--h3-size));
+}
+
+/* A small card whose file label (above the node) already names the note
+   drops the inline title, as there is no room for both. */
+@container mehrpele-card (max-width: 200px) {
+  .mehrpele-overlay-item.has-card-label .mehrpele-note-card .inline-title {
+    display: none;
+  }
+}
+
+/* A very small card (a shrunk diamond or circle) keeps its width for text. */
+@container mehrpele-card (max-width: 120px) {
+  .mehrpele-note-card > .markdown-embed-content > .markdown-preview-view {
+    padding: 0 var(--size-4-1);
+  }
+}
+
+.mehrpele-note-card > .markdown-embed-content > .markdown-source-view .cm-scroller {
+  padding: var(--size-4-2) var(--size-4-4);
+}
+
+.mehrpele-note-card.is-editing-note {
+  cursor: text;
+}
+
+/* The note's name above its node (Canvas card label). */
+.mehrpele-card-label {
+  position: absolute;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--font-ui-small);
+  line-height: 1.2;
+  color: var(--canvas-card-label-color, var(--text-faint));
+}
+
+/* A top-row node has no room above inside the frame: the label sits on its border. */
+.mehrpele-card-label.is-on-border {
+  padding: 0 4px;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  z-index: 3; /* above the overlay items (z 2) it overlaps */
+}
+
+/* Inscribed views (circles, diamonds, pills): the node's own fill around
+   them, no resize notch (the node's box handle resizes these). */
+.mehrpele-view-dock.is-inscribed {
+  clip-path: none;
+  background-color: transparent;
+}
+
+.mehrpele-view-dock.is-inscribed :is(.workspace-split, .workspace-tabs, .workspace-leaf, .workspace-leaf-content, .view-content) {
+  background-color: transparent;
+}
+
+.mehrpele-overlay-item.is-inscribed .mehrpele-node-resize {
+  display: none;
+}
+
+/* === end view-nodes === */
+
+/* === embed-insert: insert-embed popover (src/edit/embed-insert/embed-insert.css) === */
+
+.pele-embed-insert.menu {
+  position: fixed;
+  z-index: var(--layer-menu);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  width: max-content;
+  max-width: 280px;
+  padding: var(--size-4-2) var(--size-4-3);
+}
+
+/* A toolbar group button's flyout: one group's icons, no heading, tight frame. */
+.pele-embed-insert.menu.pele-edit-flyout {
+  gap: var(--size-2-2);
+  padding: var(--size-2-2);
+}
+
+.pele-embed-insert-heading {
+  padding: 0 var(--size-2-1) var(--size-2-1);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pele-embed-insert-grid {
+  display: grid;
+  grid-template-columns: repeat(4, var(--size-4-9, 36px));
+  gap: var(--size-2-2);
+}
+
+.pele-embed-insert-item.clickable-icon {
+  width: var(--size-4-9, 36px);
+  height: var(--size-4-9, 36px);
+  justify-content: center;
+  --icon-size: var(--icon-m);
+}
+
+.pele-embed-insert-item.clickable-icon:focus-visible {
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.pele-embed-insert-item.has-sub.is-active {
+  background-color: var(--background-modifier-active-hover);
+  color: var(--text-accent);
+}
+
+.pele-embed-insert-sub {
+  padding-top: var(--size-4-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.pele-embed-insert-accessory.clickable-icon {
+  position: fixed;
+  z-index: var(--layer-popover);
+  padding: var(--size-2-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-s);
+}
+
+.pele-embed-insert-detail {
+  color: var(--text-muted);
+}
+
+.pele-embed-insert-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  min-height: 1.2em;
+}
+
+.pele-embed-insert-input {
+  width: 100%;
+}
+
+/* === end embed-insert === */
+
+/* === excalidraw === */
+
+.pele-excalidraw-banner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+/* Hidden host the converter reads the live --pele-* theme from. */
+.pele-excalidraw-probe {
+  display: none;
+}
+
+.pele-excalidraw-source {
+  width: 100%;
+}
+
+/* === end excalidraw === */
+
+/* === settings tab === */
+
+/* A folded section keeps its heading; its rows are hidden but still indexed for search. */
+.mehrpele-folded > .setting-items,
+.mehrpele-folded > .setting-group-search {
+  display: none;
+}
+
+/* Category sub-headings inside the Features list. */
+.setting-item.mehrpele-category {
+  padding-top: var(--size-4-3);
+  padding-bottom: var(--size-2-1);
+  border-top: none;
+}
+
+.setting-item.mehrpele-category .setting-item-name {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.setting-item.mehrpele-warning .setting-item-name {
+  color: var(--text-warning);
+}
+
+/* === end settings tab === */
+
+/* === lint-m: former inline styles (static values moved off `el.style`) ===
+   Toggle classes that nothing else writes inline use `!important` to beat every
+   stylesheet rule, as the inline value did. Sizing classes on Pele's SVG do not
+   (see below). */
+
+/* Generic visibility toggle (replaces `style.display = "none" | ""`). */
+.pele-hidden {
+  display: none !important;
+}
+
+/* diagram-frame / shell: wrapper capped at its container width. */
+.pele-host.pele-host-capped {
+  max-width: 100%;
+}
+
+/* reflow-frame: a width-sized svg (inline width stays dynamic). No `!important`:
+   the code clears the inline property when it adds the class, so a later inline
+   value (Pele's zoom making room for its controls) still wins, as it did over
+   the former inline value. Two classes: destroy() lifts the max-width only. */
+.pele-host svg.pele.pele-reflow-sized,
+.pele-embed .pele-host svg.pele.pele-reflow-sized {
+  max-width: none;
+}
+.pele-host svg.pele.pele-reflow-height,
+.pele-embed .pele-host svg.pele.pele-reflow-height {
+  height: auto;
+}
+
+/* reflow-frame FLIP: hold (no transition before the first frame), moved and
+   faded items, and overflow release on svg + height element during the move. */
+.pele-flip-hold {
+  transition: none !important;
+}
+.pele-flip-move {
+  translate: 0px 0px;
+}
+.pele-flip-fade {
+  transition: none !important;
+  opacity: 0 !important;
+}
+.pele-flip-overflow {
+  overflow: visible !important;
+}
+
+/* lightbox svg sizing (beats `.lightbox .media-wrapper.pele-host svg.pele`).
+   No `!important`, as for the reflow classes: the code clears the inline
+   properties when it adds the class. */
+.lightbox .media-wrapper.pele-host svg.pele.pele-lightbox-reflow {
+  height: auto;
+  max-width: none;
+  max-height: none;
+}
+.lightbox .media-wrapper.pele-host svg.pele.pele-lightbox-fit {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+.lightbox .media-wrapper.pele-host svg.pele-lightbox-pad,
+svg.pele-lightbox-pad {
+  padding: var(--size-4-2) !important;
+}
+
+/* mehrpele labels: measuring / shrink-wrap, image boxes. */
+.mehrpele-measuring,
+.mehrpele-shrink-wrap {
+  width: max-content;
+}
+/* Toggle class: beats the full-bleed label rule, as the inline value did. */
+.mehrpele-image-box {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  outline: 1px dashed var(--interactive-accent) !important;
+}
+.pele-host .mehrpele-label img.mehrpele-image-fill,
+img.mehrpele-image-fill {
+  width: 100%;
+  height: 100%;
+}
+
+/* mehrpele overlay: scaled fill labels and hidden svg text. */
+.pele-host .mehrpele-label.mehrpele-fill-scaled,
+.mehrpele-fill-scaled {
+  transform-origin: center center;
+}
+.mehrpele-text-hidden {
+  visibility: hidden;
+}
+
+/* View hosts fill their mount. */
+webview.mehrpele-view-webview,
+iframe.mehrpele-view-iframe {
+  width: 100%;
+  height: 100%;
+}
+
+/* materialise preview modal. */
+.modal.pele-materialise-modal {
+  width: min(960px, 92vw);
+}
+.pele-materialise-modal .pele-materialise-pre {
+  max-height: 260px;
+  overflow: auto;
+  font-size: var(--font-ui-smaller);
+  white-space: pre-wrap;
+}
+.pele-materialise-modal .pele-materialise-table {
+  font-size: var(--font-ui-small);
+  width: 100%;
+}
+.pele-materialise-modal .pele-materialise-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* math-resolver: off-screen measuring probe and tight MathJax containers. */
+.pele-math-probe {
+  position: absolute;
+  top: 0;
+  left: -9999px;
+  visibility: hidden;
+  display: flex;
+  line-height: normal;
+  white-space: nowrap;
+  font-family: var(--font-mermaid, var(--font-text));
+}
+.pele-math-tight {
+  line-height: 0 !important;
+}
+
+/* repair notice undo button. */
+.pele-notice-undo {
+  margin-left: 0.5em;
+}
+
+/* edit/label-place: hide the label while the inline editor covers it. */
+.pele-edit-hidden {
+  visibility: hidden;
+}
+/* === end lint-m === */

@@ -1,0 +1,562 @@
+/* === view-nodes: web / PDF / workspace views in Mehrpele nodes (src/mehrpele/views/views.css) === */
+
+/* The stage lives in the note's scroller (Reading view, Live Preview) so
+   re-rendered blocks adopt their live views without moving them; in the
+   lightbox it lives in the diagram frame. Zero-size, pointer-transparent;
+   docks are positioned over their slots by stage.ts. */
+.mehrpele-view-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.mehrpele-view-stage.is-frame-stage {
+  z-index: 3;
+}
+
+.mehrpele-view-probe {
+  position: absolute;
+  width: 100px;
+  height: 0;
+  visibility: hidden;
+}
+
+.mehrpele-view-dock {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  background-color: var(--background-primary);
+  border-radius: var(--radius-s);
+  contain: layout paint;
+  /* A notch at the bottom-right corner (the on-screen size of the node's
+     resize handle) lets the slot's own corner, under the dock, take the
+     pointer: drag to resize, double-click to reset. */
+  --mehrpele-view-notch: calc(18px * var(--mehrpele-view-counter, 1));
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--mehrpele-view-notch)), calc(100% - var(--mehrpele-view-notch)) calc(100% - var(--mehrpele-view-notch)), calc(100% - var(--mehrpele-view-notch)) 100%, 0 100%);
+}
+
+.is-mobile .mehrpele-view-dock,
+.mehrpele-view-dock.is-panel {
+  clip-path: none;
+}
+
+.mehrpele-view-dock.is-hidden {
+  display: none;
+}
+
+.mehrpele-view-dock.is-panel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.mehrpele-view-content {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Workspace views in a detached leaf fill the node; their own header is
+   hidden unless the view asks for it (header=1). */
+.mehrpele-view-content > .mehrpele-view-split {
+  width: 100%;
+  height: 100%;
+}
+
+.mehrpele-view-split > .workspace-leaf {
+  height: 100%;
+}
+
+.mehrpele-view-split:not(.mehrpele-view-has-header) .view-header {
+  display: none;
+}
+
+.mehrpele-view-content .view-content,
+.mehrpele-view-content .pdf-viewer-container,
+.mehrpele-view-content .markdown-preview-view {
+  overscroll-behavior: contain;
+}
+
+/* PDFs: Obsidian's PDF embed (Canvas file-card styling: no frame, full box). */
+.mehrpele-view-pdf {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.mehrpele-view-pdf.pdf-embed {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+.mehrpele-view-pdf > .internal-embed.pdf-embed,
+.mehrpele-view-pdf > p > .internal-embed.pdf-embed,
+.mehrpele-view-pdf > p:only-child {
+  height: 100%;
+  margin: 0;
+}
+
+/* Folder views: the generated base fills the node; only its view scrolls. */
+.mehrpele-view-folder {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.mehrpele-view-folder > .bases-embed {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+}
+
+.mehrpele-view-folder > .bases-embed > :not(.bases-view) {
+  flex: none;
+}
+
+.mehrpele-view-folder > .bases-embed > .bases-view {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.mehrpele-view-webview,
+.mehrpele-view-iframe {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background-color: white;
+}
+
+/* A drag in progress (node corner, frame corner, Obsidian's own grabbing):
+   web pages must not swallow the pointer (Canvas does the same). */
+body.mehrpele-view-dragging .mehrpele-view-dock :is(webview, iframe),
+body.is-grabbing .mehrpele-view-dock :is(webview, iframe) {
+  pointer-events: none;
+}
+
+/* Chrome: constant on-screen size at any diagram zoom, shown on hover, in
+   the bottom-left corner — views keep their own controls at the top (Bases
+   toolbar, PDF toolbar, graph settings) and the resize notch is bottom-right. */
+.mehrpele-view-bar {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 32px);
+  padding: 1px 2px 1px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+  scale: var(--mehrpele-view-counter, 1);
+  transform-origin: 0 100%;
+}
+
+.mehrpele-view-dock:hover > .mehrpele-view-bar,
+.mehrpele-view-dock:focus-within > .mehrpele-view-bar {
+  opacity: 1;
+}
+
+.mehrpele-view-bar-title {
+  overflow: hidden;
+  max-width: 220px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mehrpele-view-bar-title.is-clickable {
+  cursor: pointer;
+}
+
+.mehrpele-view-bar-title.is-clickable:hover {
+  color: var(--text-normal);
+}
+
+.mehrpele-view-bar-action {
+  --icon-size: var(--icon-xs);
+  padding: 2px;
+}
+
+.mehrpele-view-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  background-color: var(--background-secondary);
+}
+
+.mehrpele-view-placeholder.is-clickable {
+  cursor: pointer;
+}
+
+.mehrpele-view-placeholder.is-clickable:hover {
+  color: var(--text-normal);
+}
+
+.mehrpele-view-placeholder-icon {
+  --icon-size: var(--icon-l);
+}
+
+.mehrpele-view-placeholder-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.mehrpele-view-chip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  margin: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  pointer-events: auto;
+}
+
+.mehrpele-view-chip-icon {
+  --icon-size: var(--icon-s);
+  display: inline-flex;
+  color: var(--text-warning);
+}
+
+.mehrpele-view-chip-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-ui-smaller);
+}
+
+/* The slot (label element) is a transparent box: the dock under it takes
+   the pointer, except the slot's own resize corner (and error chips). */
+.pele-host .mehrpele-embed.mehrpele-view-slot {
+  overflow: hidden;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pele-host .mehrpele-viewport-item .mehrpele-label.mehrpele-view-slot {
+  pointer-events: none;
+}
+
+.pele-host .mehrpele-view-slot > .mehrpele-node-resize {
+  pointer-events: auto;
+  z-index: 6;
+}
+
+.pele-host .mehrpele-view-slot.is-view-hover > .mehrpele-node-resize {
+  opacity: 1;
+}
+
+/* Attached views (%% pele-view %%): hover button and anchored panel. */
+.mehrpele-view-attach-btn {
+  position: fixed;
+  z-index: var(--layer-popover);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.mehrpele-view-attach-btn:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.mehrpele-view-attach-icon {
+  --icon-size: var(--icon-xs);
+  display: inline-flex;
+}
+
+.mehrpele-view-panel {
+  position: fixed;
+  z-index: var(--layer-popover);
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+  height: 340px;
+  min-width: 240px;
+  min-height: 160px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+  resize: both;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-primary);
+  box-shadow: var(--shadow-l);
+}
+
+.mehrpele-view-panel.is-expanded {
+  width: min(880px, calc(100vw - 16px));
+  height: min(640px, calc(100vh - 16px));
+}
+
+.mehrpele-view-panel.is-offscreen {
+  visibility: hidden;
+}
+
+.mehrpele-view-panel.is-hidden-node {
+  display: none;
+}
+
+.mehrpele-view-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.mehrpele-view-panel-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.mehrpele-view-panel-tab {
+  --icon-size: var(--icon-xs);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mehrpele-view-panel-tab:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.mehrpele-view-panel-tab.is-active {
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.mehrpele-view-panel-actions {
+  display: flex;
+  --icon-size: var(--icon-xs);
+}
+
+.mehrpele-view-panel-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Full bleed (src/mehrpele/bleed.ts): a one-element label covers its node's
+   rect exactly; no inline-block baseline gap; corners follow the node radius. */
+.pele-host .mehrpele-overlay-item.is-bleed > .mehrpele-intrinsic,
+.pele-host .mehrpele-overlay-item.is-bleed > .mehrpele-intrinsic > .mehrpele-label {
+  display: block;
+}
+
+.pele-host .mehrpele-overlay-item.is-bleed .mehrpele-label > pre,
+.pele-host .mehrpele-overlay-item.is-bleed .mehrpele-label > .el-pre > pre {
+  margin: 0;
+  min-height: 100%;
+  border-radius: 0;
+}
+
+/* ---- Note cards (note-card.ts): a `![[Note]]` node is the note, as a Canvas
+   file card: no embed chrome (title row, left border, link icon), Canvas's
+   own spacing, scrolling inside the node. Inline title and properties follow
+   the user's settings, as in Canvas. ---- */
+.pele-host .mehrpele-embed.mehrpele-note:not(.mehrpele-embed-auto) {
+  overflow: hidden;
+}
+
+.mehrpele-note-card.markdown-embed {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  box-sizing: border-box;
+  /* A card reads like the note, not like a centred node label. */
+  text-align: start;
+  /* Titles scale with the card's width (below). */
+  container-type: inline-size;
+  container-name: mehrpele-card;
+}
+
+.mehrpele-embed:not(.mehrpele-embed-auto) > .mehrpele-note-card.markdown-embed {
+  height: 100%;
+}
+
+.mehrpele-note-card.markdown-embed > .markdown-embed-link {
+  display: none;
+}
+
+.mehrpele-note-card > .markdown-embed-content {
+  max-height: none;
+}
+
+.mehrpele-embed:not(.mehrpele-embed-auto) > .mehrpele-note-card > .markdown-embed-content {
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.mehrpele-note-card > .markdown-embed-content > .markdown-preview-view {
+  padding: 0 var(--size-4-4);
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.mehrpele-note-card > .markdown-embed-content > .markdown-preview-view::before,
+.mehrpele-note-card > .markdown-embed-content > .markdown-preview-view::after {
+  content: " ";
+  display: block;
+  min-height: var(--size-4-2);
+  max-height: var(--size-4-4);
+  flex: 1 1 0;
+}
+
+/* Like a Canvas card, the note uses the card's full width instead of
+   centring at the editor's readable line width. */
+.mehrpele-note-card > .markdown-embed-content > .markdown-preview-view > .markdown-preview-sizer {
+  flex: 1 0 0;
+  max-width: none;
+  margin-inline: 0;
+}
+
+/* A small card doesn't get a full-size H1: the title scales with the card,
+   stays on one line and ends in an ellipsis instead of breaking mid-word. */
+.mehrpele-note-card .inline-title {
+  cursor: text;
+  font-size: clamp(1em, 10cqi, var(--inline-title-size));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mehrpele-note-card .markdown-preview-view h1 {
+  font-size: clamp(1em, 9cqi, var(--h1-size));
+}
+
+.mehrpele-note-card .markdown-preview-view h2 {
+  font-size: clamp(1em, 8cqi, var(--h2-size));
+}
+
+.mehrpele-note-card .markdown-preview-view h3 {
+  font-size: clamp(1em, 7cqi, var(--h3-size));
+}
+
+/* A small card whose file label (above the node) already names the note
+   drops the inline title, as there is no room for both. */
+@container mehrpele-card (max-width: 200px) {
+  .mehrpele-overlay-item.has-card-label .mehrpele-note-card .inline-title {
+    display: none;
+  }
+}
+
+/* A very small card (a shrunk diamond or circle) keeps its width for text. */
+@container mehrpele-card (max-width: 120px) {
+  .mehrpele-note-card > .markdown-embed-content > .markdown-preview-view {
+    padding: 0 var(--size-4-1);
+  }
+}
+
+.mehrpele-note-card > .markdown-embed-content > .markdown-source-view .cm-scroller {
+  padding: var(--size-4-2) var(--size-4-4);
+}
+
+.mehrpele-note-card.is-editing-note {
+  cursor: text;
+}
+
+/* The note's name above its node (Canvas card label). */
+.mehrpele-card-label {
+  position: absolute;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--font-ui-small);
+  line-height: 1.2;
+  color: var(--canvas-card-label-color, var(--text-faint));
+}
+
+/* A top-row node has no room above inside the frame: the label sits on its border. */
+.mehrpele-card-label.is-on-border {
+  padding: 0 4px;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  z-index: 3; /* above the overlay items (z 2) it overlaps */
+}
+
+/* Inscribed views (circles, diamonds, pills): the node's own fill around
+   them, no resize notch (the node's box handle resizes these). */
+.mehrpele-view-dock.is-inscribed {
+  clip-path: none;
+  background-color: transparent;
+}
+
+.mehrpele-view-dock.is-inscribed :is(.workspace-split, .workspace-tabs, .workspace-leaf, .workspace-leaf-content, .view-content) {
+  background-color: transparent;
+}
+
+.mehrpele-overlay-item.is-inscribed .mehrpele-node-resize {
+  display: none;
+}
+
+/* === end view-nodes === */
