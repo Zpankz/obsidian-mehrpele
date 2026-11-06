@@ -781,10 +781,10 @@ export class EditToolbarLayer {
     };
     const s = this.host.settings();
     if (s.toolbar) {
-      if (c.color) btn("palette", "Set colour", (b) => this.colorMenu(b, c));
-      if (c.textSize) btn("type", "Text size", (b) => this.sizeMenu(b, c));
-      if (c.shapes) btn("shapes", "Shape", (b) => this.shapeMenu(b, c));
-      if (c.lineStyle || c.heads) btn("spline", "Line and arrowheads", (b) => this.edgeMenu(b, c));
+      if (c.color) btn("palette", "Set colour", () => this.colorMenu(c));
+      if (c.textSize) btn("type", "Text size", () => this.sizeMenu(c));
+      if (c.shapes) btn("shapes", "Shape", () => this.shapeMenu(c));
+      if (c.lineStyle || c.heads) btn("spline", "Line and arrowheads", () => this.edgeMenu(c));
       if (c.group) btn("plus", "Group into a subgraph", (_b, e) => void this.group(c, e));
       if (c.sharedChild) btn("arrow-right", "Add a child of all selected (Cmd/Ctrl-click: suggest)", (_b, e) => void this.sharedChild(c, e)).dataset.peleMod = "shared-child";
     }
@@ -984,11 +984,6 @@ export class EditToolbarLayer {
     this.listen(false);
   }
 
-  /** Back-compat for callers that hid the menu. */
-  hide(_force = false): void {
-    this.clear();
-  }
-
   private closeSubmenu(): void {
     const hadFocus = !!this.submenu?.contains(this.doc.activeElement);
     const after = this.onSubmenuClose; // embed-insert: the popover closes itself first (focus back to its button)
@@ -1092,7 +1087,7 @@ export class EditToolbarLayer {
   }
 
   /** Canvas's colour picker: six theme swatches, custom, reset. */
-  private colorMenu(_anchor: HTMLElement, c: Combined): void {
+  private colorMenu(c: Combined): void {
     const sub = this.openSub("color", "Colour");
     if (!sub) return;
     const cur = c.currentColor;
@@ -1125,7 +1120,7 @@ export class EditToolbarLayer {
   }
 
   /** Text size: "A" at each size, Medium being the default; reset removes a size. */
-  private sizeMenu(_anchor: HTMLElement, c: Combined): void {
+  private sizeMenu(c: Combined): void {
     const sub = this.openSub("size", "Text size", "pele-edit-iconpop");
     if (!sub) return;
     const row = sub.createDiv({ cls: "pele-pop-row" });
@@ -1141,7 +1136,7 @@ export class EditToolbarLayer {
   }
 
   /** Shapes as Pele draws them on one aligned grid, grouped: boxes, round, angular, special. */
-  private shapeMenu(_anchor: HTMLElement, c: Combined): void {
+  private shapeMenu(c: Combined): void {
     const sub = this.openSub("shape", "Shape", "pele-edit-iconpop pele-shape-grid");
     if (!sub) return;
     const mind = this.host.diagramType() === "mindmap";
@@ -1169,7 +1164,7 @@ export class EditToolbarLayer {
   }
 
   /** Edge style: the line (solid, dotted, thick) and its ends (none, arrow, both, circle, cross). */
-  private edgeMenu(_anchor: HTMLElement, c: Combined): void {
+  private edgeMenu(c: Combined): void {
     const sub = this.openSub("edge", "Line and arrowheads", "pele-edit-iconpop");
     if (!sub) return;
     const rows: HTMLElement[][] = [];
@@ -1216,15 +1211,14 @@ export class EditToolbarLayer {
       return;
     }
     const keep = op.op === "delete" ? [] : this.selection.map((s) => s.target);
-    await this.write(res.source, res.switched ? `${what} (block switched to Mehrpele)` : what, `${what} ${c.targets.map(keyOf).join(",")} ${ev.type} trusted=${ev.isTrusted}`, keep.length ? { sourcePath: this.host.sourcePath, targets: keep } : null);
+    await this.write(res.source, res.switched ? `${what} (block switched to Mehrpele)` : what, keep.length ? { sourcePath: this.host.sourcePath, targets: keep } : null);
   }
 
   /** Persist, then hand the follow-up (selection / editor) to whichever layer shows the result. */
-  private async write(source: string, what: string, log: string, follow: FollowUp | null): Promise<boolean> {
+  private async write(source: string, what: string, follow: FollowUp | null): Promise<boolean> {
     this.busy = true;
     this.closeSubmenu();
     try {
-      console.debug("[pele-mermaid] edit:", log);
       // Before the write: Reading view replaces this frame while it saves.
       const origin = this.place();
       const ok = await this.host.persist(source, what);
@@ -1281,7 +1275,7 @@ export class EditToolbarLayer {
     if (this.busy || !ev.isTrusted) return;
     const res = applyEditMany(this.ctx(), [target], { op: "text", text });
     if (!res.ok) return void new Notice(res.error === "unchanged" ? "Pele: nothing to insert." : res.error);
-    await this.write(res.source, res.switched ? "embed (block switched to Mehrpele)" : "embed", `insert embed ${keyOf(target)} ${ev.type} trusted=${ev.isTrusted}`, {
+    await this.write(res.source, res.switched ? "embed (block switched to Mehrpele)" : "embed", {
       sourcePath: this.host.sourcePath,
       targets: [target],
       ...(edit ? { edit: { chain: false } } : {}),
@@ -1308,7 +1302,7 @@ export class EditToolbarLayer {
     if (!res.ok) return void new Notice(res.error);
     const nodeText = readText(this.ctx(), { kind: "node", id }) ?? id;
     const suggestions = ev.metaKey || ev.ctrlKey ? this.suggestions({ nodeId: id, nodeText, relation }) : undefined;
-    await this.write(res.source, "new node", `add ${relation} of ${id} → ${res.id} trusted=${ev.isTrusted}`, {
+    await this.write(res.source, "new node", {
       sourcePath: this.host.sourcePath,
       targets: [{ kind: "node", id: res.id }],
       edit: { chain: true, ...(suggestions ? { suggestions } : {}) },
@@ -1481,7 +1475,7 @@ export class EditToolbarLayer {
       else if (!res.noop) new Notice(res.error);
       return;
     }
-    await this.write(res.source, "new edge", `connect ${from} → ${to} trusted=${ev.isTrusted}`, {
+    await this.write(res.source, "new edge", {
       sourcePath: this.host.sourcePath,
       targets: [{ kind: "edge", id: res.edgeId }],
     });
@@ -1504,7 +1498,7 @@ export class EditToolbarLayer {
     }
     const res = addConnectedNode(this.ctx(), from, side, at);
     if (!res.ok) return void new Notice(res.error);
-    await this.write(res.source, "new node", `drop from ${from} → ${res.id} trusted=${ev.isTrusted}`, {
+    await this.write(res.source, "new node", {
       sourcePath: this.host.sourcePath,
       targets: [{ kind: "node", id: res.id }],
       edit: { chain: true },
@@ -1531,7 +1525,7 @@ export class EditToolbarLayer {
     if (!res.ok) return void new Notice(res.error);
     const others = ids.map((i) => readText(this.ctx(), { kind: "node", id: i }) ?? i);
     const suggestions = ev.metaKey || ev.ctrlKey ? this.suggestions({ nodeId: ids[0], nodeText: others[0], relation: "shared-child", others }) : undefined;
-    await this.write(res.source, "new node", `shared child of ${ids.join(",")} → ${res.id} trusted=${ev.isTrusted}`, {
+    await this.write(res.source, "new node", {
       sourcePath: this.host.sourcePath,
       targets: [{ kind: "node", id: res.id }],
       edit: { chain: true, ...(suggestions ? { suggestions } : {}) },
@@ -1542,7 +1536,7 @@ export class EditToolbarLayer {
     if (this.busy || !ev.isTrusted) return;
     const res = groupIntoSubgraph(this.ctx(), c.targets.map((t) => t.id));
     if (!res.ok) return void new Notice(res.error, 8000);
-    await this.write(res.source, "new subgraph", `group ${c.targets.map((t) => t.id).join(",")} → ${res.id} trusted=${ev.isTrusted}`, {
+    await this.write(res.source, "new subgraph", {
       sourcePath: this.host.sourcePath,
       targets: [{ kind: "subgraph", id: res.id }],
       edit: { chain: false },
@@ -1594,7 +1588,6 @@ export class EditToolbarLayer {
           opts.after?.(false);
           return;
         }
-        console.debug("[pele-mermaid] edit: label", target, "inline editor");
         this.busy = true;
         void this.host
           .persist(res.source, res.switched ? "label (block switched to Mehrpele)" : "label")

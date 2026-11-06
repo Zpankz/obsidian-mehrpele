@@ -1,24 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { buildCheckSummary, buildCheckSummaryAsync, DIAGRAM_TYPES, diagramsOf, formatCheckText } from "../src/cli/check";
 import {
-  applyRepairsToText,
-  buildRepairSummary,
-  fromCanvasLang,
-  repairResultEntry,
-  buildCheckSummary,
-  buildCheckSummaryAsync,
-  canvasFileName,
-  chooseCanvasTarget,
   cliFlag,
-  isWholeFileDiagram,
-  mergeUserCanvasContent,
-  validateOutPath,
-  DIAGRAM_TYPES,
-  diagramsOf,
-  formatCheckText,
+  fromCanvasLang,
   guardOutput,
   inVaultFolder,
+  isWholeFileDiagram,
   parseIndexParam,
-} from "../src/cli-handlers";
+  validateOutPath,
+} from "../src/cli/params";
+import { applyRepairsToText, buildRepairSummary, repairResultEntry } from "../src/cli/repair-text";
+import { canvasFileName, chooseCanvasTarget, mergeUserCanvasContent } from "../src/canvas/files";
 
 const NOTE = [
   "# T",
@@ -294,7 +286,7 @@ describe("pele-render bridge interop", () => {
 
 describe("check warnings for pele-size", () => {
   test("warnings mirror pele-render: located at the directive line, never errors", async () => {
-    const { buildCheckSummary } = await import("../src/cli-handlers");
+    const { buildCheckSummary } = await import("../src/cli/check");
     const s = buildCheckSummary([
       { file: "n.md", content: "# t\n\n```mermaid\nblock-beta\n  a b\n%% pele-size a=100 %%\n```\n\n```mermaid\nflowchart LR\n  A --> B\n%% pele-size Z=10 %%\n```\n" },
     ]);
@@ -304,7 +296,7 @@ describe("check warnings for pele-size", () => {
   });
 
   test("a warning points at the outer directive, not one inside a nested label", async () => {
-    const { buildCheckSummary } = await import("../src/cli-handlers");
+    const { buildCheckSummary } = await import("../src/cli/check");
     const content = '# t\n\n```mehrpele\nflowchart LR\n  A --> N["~~~mermaid\nflowchart TD\n  X --> Y\n%% pele-size X=50 %%\n~~~"]\n%% pele-size Z=10 %%\n```\n';
     const s = buildCheckSummary([{ file: "n.md", content }]);
     expect(s.warnings?.map((w) => [w.line, w.code])).toEqual([[10, "unknown-node"]]);

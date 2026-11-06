@@ -30,6 +30,7 @@ export function dispatchBlockReplace(cm: EditorView, fenceLine: number, oldSourc
 /** Adapt the plugin to DiagramFrame's FrameHost (settings() as a method). */
 export function frameHostOf(plugin: PeleMermaidPlugin): FrameHost {
   return {
+    app: plugin.app,
     settings: () => plugin.settings,
     undoLatest: (path) => plugin.diagramUndo.undoLatest(path),
     repair: (f) => void plugin.repairFrame(f),

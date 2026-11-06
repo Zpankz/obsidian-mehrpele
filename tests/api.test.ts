@@ -16,6 +16,7 @@ const { CompanionActions, COMPANION_ACTION_CLASS } = await import("../src/api/fr
 const { CompanionMenus } = await import("../src/api/menu-items");
 const { contextItems } = await import("../src/context-menu-spec");
 const { sourceDiagramType } = await import("../src/diagram-type");
+const { AddonHints, FLOW_HINT_LAYER, FLOW_HINT_TEXT } = await import("../src/api/hints");
 
 // region fake DOM
 class FakeEl {
@@ -47,6 +48,19 @@ class FakeEl {
     c.parentElement = this;
     this.children.push(c);
     return c;
+  }
+  /** Obsidian's `createDiv` element method: a child div, appended. */
+  createDiv(o: { cls?: string; text?: string } = {}): FakeEl {
+    const d = this.appendChild(this.ownerDocument.createElement("div"));
+    d.className = o.cls ?? "";
+    d.textContent = o.text ?? "";
+    return d;
+  }
+  createEl(tag: string, o: { cls?: string; text?: string } = {}): FakeEl {
+    const el = this.appendChild(this.ownerDocument.createElement(tag));
+    el.className = o.cls ?? "";
+    el.textContent = o.text ?? "";
+    return el;
   }
   insertBefore(c: FakeEl, ref: FakeEl | null): FakeEl {
     if (!ref) return this.appendChild(c);
@@ -220,6 +234,71 @@ function pinned(h: unknown, s: Surface): string[] {
 
 const feature = (id: string, dispose: () => void) => ({ id, name: id, version: "0.0.1", requiredHostMinor: 1, dispose });
 
+describe("host add-on hints", () => {
+  test("flow tokens, toggle and readiness reconcile one native button without a diagram redraw", () => {
+    const r = registry();
+    const flow = surface("Flow.md#0", "pele");
+    flow.fenceRest = "width=400 cannoli";
+    const plain = surface("Plain.md#0");
+    plain.fenceRest = "not-cannoli";
+    const h = r.bind(flow), p = r.bind(plain);
+    let enabled = true, ready = false, opens = 0;
+    const hints = new AddonHints({ handles: r.handles, enabled: () => enabled, ready: () => ready, openFlows: () => void opens++ });
+    const layer = h.overlay(FLOW_HINT_LAYER) as unknown as FakeEl;
+    expect(layer.children).toHaveLength(1);
+    const button = layer.children[0]!;
+    expect(button.tagName).toBe("button");
+    expect(button.textContent).toBe(FLOW_HINT_TEXT);
+    (button as unknown as HTMLButtonElement).onclick!({ stopPropagation() {} } as PointerEvent);
+    expect(opens).toBe(1);
+    r.rendered(flow); r.flush(); hints.refresh();
+    expect(layer.children).toEqual([button]);
+    expect((p.overlay(FLOW_HINT_LAYER) as unknown as FakeEl).children).toHaveLength(0);
+    ready = true; hints.refresh();
+    expect(layer.children).toHaveLength(0);
+    ready = false; hints.refresh();
+    expect(layer.children).toHaveLength(1);
+    enabled = false; hints.refresh();
+    expect(layer.children).toHaveLength(0);
+    enabled = true; hints.refresh();
+    hints.dispose(); hints.dispose();
+    expect(layer.children).toHaveLength(0);
+    r.rendered(flow); r.flush(); hints.refresh();
+    expect(layer.children).toHaveLength(0);
+    expect(flow.rerenders).toBe(0);
+    r.handles.disposeAll();
+  });
+
+  test("feature metadata replacement notifies only the final state and stale disposers cannot erase it", () => {
+    const { host, api } = hostApi();
+    const states: (number | null)[] = [];
+    const off = host.onFeaturesChanged(() => states.push(host.feature("addon")?.requiredHostMinor ?? null));
+    const first = api.registerFeature(feature("addon", () => undefined));
+    const def = { ...feature("addon", () => undefined), requiredHostMinor: 2 };
+    const second = api.registerFeature(def);
+    def.requiredHostMinor = 9;
+    first();
+    expect(states).toEqual([1, 2]);
+    expect(host.feature("addon")?.requiredHostMinor).toBe(2);
+    second();
+    expect(states).toEqual([1, 2, null]);
+    off(); host.unload();
+  });
+
+  test("throwing companion cleanup removes metadata and layers before notifying", () => {
+    const { host, api, bind } = hostApi({ adopt: () => () => { throw new Error("cleanup"); } });
+    const h = bind(surface("a.md#1"));
+    const layer = h.overlay("addon") as unknown as FakeEl;
+    const end = api.registerFeature(feature("addon", () => undefined));
+    const seen: unknown[] = [];
+    host.onFeaturesChanged(() => seen.push([host.feature("addon"), layer.parentElement]));
+    expect(end).toThrow("cleanup");
+    expect(seen).toEqual([[null, null]]);
+    host.unload();
+    expect(seen).toHaveLength(1);
+  });
+});
+
 /** A host api over a fresh registry, with a recording workspace and feature registry. */
 function hostApi(over: Partial<Parameters<typeof createHostApi>[0]> = {}) {
   const r = registry();
@@ -252,6 +331,8 @@ function hostApi(over: Partial<Parameters<typeof createHostApi>[0]> = {}) {
     }),
     read: async () => "{}",
     mountDiagram: () => undefined,
+    onModify: () => () => undefined,
+    schedule: () => () => undefined,
     ...over,
   });
   return { ...r, host, api: host.api, log, triggers };
@@ -337,6 +418,33 @@ describe("createHostApi", () => {
       expect(adopted).toEqual([]);
       expect(observed.size).toBe(0);
       expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("frame actions, menu items, frame listeners and canvas mounts after unload are refused", async () => {
+    const mounted: unknown[] = [];
+    const { host, api, bind, observed, actions, menus } = hostApi({ mountDiagram: (el) => void mounted.push(el) });
+    host.unload();
+    bind(surface("a.md#1"));
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const disposers = [
+        api.addFrameAction({ id: "go", icon: "play", title: "Go", when: () => true, run: () => undefined }),
+        api.addMenuItems(() => undefined),
+        api.frames.onDidRender(() => undefined),
+        api.frames.onDidDestroy(() => undefined),
+      ];
+      const m = api.mountCanvas({ path: "x.canvas" } as never, div() as unknown as HTMLElement);
+      await Promise.resolve();
+      await Promise.resolve();
+      for (const d of [...disposers, m.destroy]) expect(() => d()).not.toThrow();
+      expect(actions.size).toBe(0);
+      expect(menus.size).toBe(0);
+      expect(observed.size).toBe(0);
+      expect(mounted).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(5);
     } finally {
       warn.mockRestore();
     }
@@ -431,6 +539,267 @@ describe("createHostApi", () => {
     expect(mounted).toEqual([]);
     expect(() => m.destroy()).not.toThrow();
   });
+
+  // region mountCanvas live
+  /** A host with a fake vault `modify` source and a manual timer queue. */
+  function liveHost(texts: (string | Promise<string>)[] = ['{"v":1}', '{"v":2}', '{"v":3}']) {
+    const watchers = new Set<(f: { path: string }) => void>();
+    const watched: string[] = [];
+    const timers: { cb: () => void; ms: number; live: boolean }[] = [];
+    const log: string[] = [];
+    const mounts: { args: unknown[]; owner: Component; frame: FakeEl }[] = [];
+    let reads = 0;
+    const r = hostApi({
+      read: async () => texts[Math.min(reads++, texts.length - 1)]!,
+      canvas: () => ({
+        mermaidToCanvas: () => ({}) as never,
+        canvasToMermaid: (c) => ({ source: `flowchart ${JSON.stringify(c)}`, mehrpele: false }),
+      }),
+      mountDiagram: (el, owner, ...args) => {
+        const n = mounts.length + 1;
+        const frame = div(`frame-${n}`);
+        log.push(`mount:${n}:children=${(el as unknown as FakeEl).children.map((c) => c.className).join(",")}`);
+        (el as unknown as FakeEl).appendChild(frame);
+        owner.register(() => void log.push(`unload:${n}`));
+        mounts.push({ args, owner: owner as unknown as Component, frame });
+      },
+      onModify: (file, cb) => {
+        watched.push(file.path);
+        watchers.add(cb);
+        return () => void watchers.delete(cb);
+      },
+      schedule: (cb, ms) => {
+        const t = { cb, ms, live: true };
+        timers.push(t);
+        return () => void (t.live = false);
+      },
+    });
+    const modify = (path: string): void => {
+      for (const w of [...watchers]) w({ path });
+    };
+    const runTimers = (): void => {
+      for (const t of timers.splice(0)) if (t.live) t.cb();
+    };
+    const settle = async (): Promise<void> => {
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    };
+    return { ...r, watchers, watched, timers, log, mounts, modify, runTimers, settle, reads: () => reads };
+  }
+
+  test("mountCanvas with key and locate: mount args carry them (no fence line: no write-back)", async () => {
+    const h = liveHost();
+    const locate = () => ({ line: 4, rest: "cannoli" });
+    const el = div();
+    h.host.mountCanvas({ path: "Maps/f.canvas" } as never, el as unknown as HTMLElement, { fenceRest: "cannoli", key: "Notes/a.md#4", locate });
+    await h.settle();
+    // The dep has no fence-line parameter: main.ts passes undefined, so edits never write into the fence body.
+    expect(h.mounts.map((m) => m.args)).toEqual([
+      ['flowchart {"v":1}', "Maps/f.canvas", "mermaid", { key: "Notes/a.md#4", fenceRest: "cannoli", locate }],
+    ]);
+    expect((h.mounts[0]!.args[3] as { locate: unknown }).locate).toBe(locate);
+  });
+
+  test("an embed's frame belongs to the note holding the fence, so resync keeps its key", async () => {
+    const h = liveHost();
+    const el = div();
+    h.host.mountCanvas({ path: "Maps/f.canvas" } as never, el as unknown as HTMLElement, {
+      fenceRest: "cannoli",
+      key: "Notes/a.md#4",
+      locate: () => ({ line: 4, rest: "cannoli" }),
+      sourcePath: "Notes/a.md",
+    });
+    await h.settle();
+    expect(h.mounts[0]!.args[1]).toBe("Notes/a.md");
+  });
+
+  test("a modify of the canvas re-reads, converts and mounts a new child with the same key before the old goes", async () => {
+    const h = liveHost();
+    const el = div();
+    h.host.mountCanvas({ path: "Maps/f.canvas" } as never, el as unknown as HTMLElement, { fenceRest: "cannoli", key: "Notes/a.md#4" });
+    await h.settle();
+    expect(h.watched).toEqual(["Maps/f.canvas"]);
+    h.modify("Maps/f.canvas");
+    expect(h.reads()).toBe(1); // debounced, not yet
+    expect(h.timers.map((t) => t.ms)).toEqual([120]);
+    h.runTimers();
+    await h.settle();
+    expect(h.reads()).toBe(2);
+    expect(h.log).toEqual(["mount:1:children=", "mount:2:children=frame-1", "unload:1"]);
+    expect(h.mounts.map((m) => m.args)).toEqual([
+      ['flowchart {"v":1}', "Maps/f.canvas", "mermaid", { key: "Notes/a.md#4", fenceRest: "cannoli" }],
+      ['flowchart {"v":2}', "Maps/f.canvas", "mermaid", { key: "Notes/a.md#4", fenceRest: "cannoli" }],
+    ]);
+    expect(el.children.map((c) => c.className)).toEqual(["frame-2"]);
+    expect(h.mounts[1]!.owner._loaded).toBe(true);
+  });
+
+  test("canvas modify after an LP fence moves mounts under its current key", async () => {
+    const h = liveHost();
+    const el = div();
+    let line = 4;
+    h.host.mountCanvas({ path: "Maps/f.canvas" } as never, el as unknown as HTMLElement, {
+      key: "Notes/a.md#4", sourcePath: "Notes/a.md", fenceRest: "cannoli",
+      locate: () => ({ line, rest: "cannoli" }),
+    });
+    await h.settle();
+    line = 7;
+    h.modify("Maps/f.canvas");
+    h.runTimers();
+    await h.settle();
+    expect(h.mounts[1]!.args[3]).toMatchObject({ key: "Notes/a.md#7" });
+  });
+
+  test("repeated modifies coalesce into one re-render", async () => {
+    const h = liveHost();
+    h.host.mountCanvas({ path: "f.canvas" } as never, div() as unknown as HTMLElement);
+    await h.settle();
+    h.modify("f.canvas");
+    h.modify("f.canvas");
+    h.modify("f.canvas");
+    h.runTimers();
+    await h.settle();
+    expect(h.reads()).toBe(2);
+    expect(h.mounts.length).toBe(2);
+  });
+
+  test("a modify of another file does nothing", async () => {
+    const h = liveHost();
+    h.host.mountCanvas({ path: "f.canvas" } as never, div() as unknown as HTMLElement);
+    await h.settle();
+    h.modify("g.canvas");
+    h.runTimers();
+    await h.settle();
+    expect(h.timers.length).toBe(0);
+    expect(h.reads()).toBe(1);
+    expect(h.mounts.length).toBe(1);
+  });
+
+  test("destroy unregisters the watcher; a modify pending or arriving after destroy mounts nothing", async () => {
+    const h = liveHost();
+    const el = div();
+    const m = h.host.mountCanvas({ path: "f.canvas" } as never, el as unknown as HTMLElement);
+    await h.settle();
+    const cb = [...h.watchers][0]!;
+    h.modify("f.canvas");
+    m.destroy();
+    expect(h.watchers.size).toBe(0);
+    h.runTimers();
+    cb({ path: "f.canvas" });
+    h.runTimers();
+    await h.settle();
+    expect(h.reads()).toBe(1);
+    expect(h.mounts.length).toBe(1);
+    expect(el.children).toEqual([]);
+  });
+
+  test("a re-read pending at destroy (or host unload) mounts nothing", async () => {
+    const h = liveHost();
+    const m = h.host.mountCanvas({ path: "f.canvas" } as never, div() as unknown as HTMLElement);
+    await h.settle();
+    h.modify("f.canvas");
+    h.runTimers();
+    m.destroy();
+    await h.settle();
+    expect(h.mounts.length).toBe(1);
+    const h2 = liveHost();
+    h2.host.mountCanvas({ path: "f.canvas" } as never, div() as unknown as HTMLElement);
+    await h2.settle();
+    h2.modify("f.canvas");
+    h2.runTimers();
+    h2.host.unload();
+    await h2.settle();
+    expect(h2.mounts.length).toBe(1);
+    expect(h2.watchers.size).toBe(0);
+  });
+
+  test("live: false mounts without a watcher", async () => {
+    const h = liveHost();
+    h.host.mountCanvas({ path: "f.canvas" } as never, div() as unknown as HTMLElement, { live: false });
+    await h.settle();
+    expect(h.watched).toEqual([]);
+    expect(h.mounts.length).toBe(1);
+  });
+
+  test("a stale initial read rejection cannot replace tracking of a newer successful frame", async () => {
+    let rejectInitial: (error: unknown) => void = () => {};
+    const pending = new Promise<string>((_, reject) => { rejectInitial = reject; });
+    const h = liveHost([pending, '{"v":2}', '{"v":3}']);
+    const el = div();
+    const err = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const mount = h.host.mountCanvas({ path: "f.canvas" } as never, el as unknown as HTMLElement);
+      h.modify("f.canvas"); h.runTimers(); await h.settle();
+      expect(el.children.map((c) => c.className)).toEqual(["frame-1"]);
+      rejectInitial(new Error("stale read")); await h.settle();
+      expect(err).not.toHaveBeenCalled();
+      expect(el.children.map((c) => c.className)).toEqual(["frame-1"]);
+      h.modify("f.canvas"); h.runTimers(); await h.settle();
+      expect(el.children.map((c) => c.className)).toEqual(["frame-2"]);
+      mount.destroy();
+      expect(el.children).toEqual([]);
+    } finally { err.mockRestore(); }
+  });
+
+  test("a re-render whose canvas fails to parse keeps the current frame", async () => {
+    const h = liveHost(['{"v":1}', "{not json"]);
+    const el = div();
+    const err = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      h.host.mountCanvas({ path: "f.canvas" } as never, el as unknown as HTMLElement);
+      await h.settle();
+      h.modify("f.canvas");
+      h.runTimers();
+      await h.settle();
+      expect(el.children.map((c) => c.className)).toEqual(["frame-1"]);
+      expect(h.mounts[0]!.owner._loaded).toBe(true);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  test("a first-render error is a tracked element: a later good render removes it, the container's own children stay", async () => {
+    const h = liveHost(["{not json", '{"v":2}']);
+    const el = div();
+    const own = div("companion-own");
+    el.appendChild(own);
+    const err = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      h.host.mountCanvas({ path: "f.canvas" } as never, el as unknown as HTMLElement);
+      await h.settle();
+      expect(el.children.map((c) => c.className)).toEqual(["companion-own", "pele-error"]);
+      expect(el.children[1]!.textContent).toBe("Mehrpele: could not render f.canvas");
+      expect(el.textContent).toBe("");
+      h.modify("f.canvas");
+      h.runTimers();
+      await h.settle();
+      expect(el.children.map((c) => c.className)).toEqual(["companion-own", "frame-1"]);
+      expect(el.textContent).toBe("");
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  test("a mount that throws after its owner loaded unloads that owner", async () => {
+    let owner: unknown = null;
+    const { api } = hostApi({
+      mountDiagram: (_el, o) => {
+        owner = o;
+        throw new Error("boom");
+      },
+    });
+    const el = div();
+    const err = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      api.mountCanvas({ path: "x.canvas" } as never, el as unknown as HTMLElement);
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      expect(owner).not.toBeNull();
+      expect((owner as { _loaded: boolean })._loaded).toBe(false);
+      expect(el.children.map((c) => c.className)).toEqual(["pele-error"]);
+    } finally {
+      err.mockRestore();
+    }
+  });
+  // endregion mountCanvas live
 });
 
 describe("frame handles", () => {

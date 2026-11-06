@@ -6,24 +6,12 @@
 import { App, Editor, MarkdownView, Modal, Notice, Setting, TFile } from "obsidian";
 import { peleToExcalidraw, type PeleToExcalidrawResult } from "pele-render/excalidraw";
 import { extractBlocks, blockAtLine, diagramIndexOf, drawingPathFor, drawingPathError, parseIndex } from "./extract";
-import { resolvePalette, cliResultJson } from "./palette";
-import { checkExcalidraw, getExcalidrawPlugin, MIN_EXCALIDRAW_VERSION, type EaLike } from "./ea";
-import { cliFlag } from "../cli-handlers";
+import { resolvePalette } from "./palette";
+import { checkExcalidraw, getExcalidrawPlugin, EXCALIDRAW_INSTALL_URL, MIN_EXCALIDRAW_VERSION, type EaLike, type ExcalidrawElementLike } from "./ea";
+import { cliResultJson, errorMessage, failed, succeeded, type ConvertOptions, type DrawingResult, type InsertResult } from "./result";
+import { cliFlag } from "../cli/params";
 
-export interface ConvertOptions {
-  palette?: Record<string, string>;
-  scale?: number;
-  fontFamily?: number;
-}
-
-export interface DrawingResult {
-  ok: boolean;
-  out?: string;
-  fidelity: string;
-  elements: number;
-  dropped: string[];
-  error?: string;
-}
+export type { ConvertOptions, DrawingResult, InsertResult } from "./result";
 
 /** What the core (diagram menu, CLI) calls while the feature runs. */
 export interface ExcalidrawApi {
@@ -33,7 +21,7 @@ export interface ExcalidrawApi {
    * Without `path` the drawing is named after `sourcePath` (the file holding the diagram), else the active note.
    */
   createDrawing(source: string, opts?: DrawingOptions): Promise<DrawingResult>;
-  insertIntoView(source: string): Promise<Omit<DrawingResult, "out">>;
+  insertIntoView(source: string): Promise<InsertResult>;
   cliConvert(params: Record<string, string>): Promise<string>;
 }
 
@@ -43,6 +31,11 @@ const PREFIX = "Pele: Excalidraw: ";
 /** Placeholder diagram source (Mermaid code, not UI prose). */
 const SAMPLE_SOURCE = "flowchart TD\n  A --> B";
 const notice = (msg: string, ms?: number): void => void new Notice(PREFIX + msg, ms);
+/** A failure the user sees as a Notice; `result` is the conversion, when it had run. */
+const notifyFailure = (error: string, result?: PeleToExcalidrawResult): DrawingResult => {
+  notice(error, 8000);
+  return failed(error, result);
+};
 
 export class SourcePromptModal extends Modal {
   private resolveFn: ((v: string | null) => void) | null = null;
@@ -129,7 +122,7 @@ export class ExcalidrawConverter implements ExcalidrawApi {
     const check = checkExcalidraw(this.app);
     if (check.ok) return check;
     const error = check.reason === "missing"
-      ? "the Excalidraw plugin is not installed. Install it: obsidian://show-plugin?id=obsidian-excalidraw-plugin"
+      ? `the Excalidraw plugin is not installed. Install it: ${EXCALIDRAW_INSTALL_URL}`
       : check.reason === "disabled"
         ? "the Excalidraw plugin is installed but not enabled. Enable it in Settings → Community plugins."
         : `the Excalidraw plugin is too old. Conversion needs Excalidraw ${MIN_EXCALIDRAW_VERSION} or later.`;
@@ -137,15 +130,15 @@ export class ExcalidrawConverter implements ExcalidrawApi {
     return { ok: false, error };
   }
 
-  private materialise(ea: EaLike, result: PeleToExcalidrawResult): Record<string, unknown>[] {
+  private materialise(ea: EaLike, result: PeleToExcalidrawResult): ExcalidrawElementLike[] {
     const runtime = getExcalidrawPlugin(this.app)?.getCLIRuntime?.() ?? ea.getCLIRuntime?.();
     if (runtime?.convertToExcalidrawElements) return runtime.convertToExcalidrawElements(result.elements, { regenerateIds: false });
-    return result.elements as unknown as Record<string, unknown>[];
+    return result.elements;
   }
 
   private stage(ea: EaLike, result: PeleToExcalidrawResult): void {
     ea.clear();
-    for (const el of this.materialise(ea, result)) ea.elementsDict[(el as { id: string }).id] = el;
+    for (const el of this.materialise(ea, result)) ea.elementsDict[el.id] = el;
     for (const [key, f] of Object.entries(result.files)) {
       ea.imagesDict[key] = { mimeType: f.mimeType, dataURL: f.dataURL, id: f.id, created: Date.now(), isHyperLink: false, hyperlink: null, file: null, hasSVGwithBitmap: false, latex: null };
     }
@@ -156,32 +149,29 @@ export class ExcalidrawConverter implements ExcalidrawApi {
     try {
       return { ok: true, result: this.convert(source) };
     } catch (e) {
-      const error = `not a valid Pele diagram: ${e instanceof Error ? e.message : String(e)}`;
+      const error = `not a valid Pele diagram: ${errorMessage(e)}`;
       notice(error, 8000);
       return { ok: false, error };
     }
   }
 
   async createDrawing(source: string, opts?: DrawingOptions): Promise<DrawingResult> {
-    const failed = (error: string, fidelity = "image"): DrawingResult => {
-      notice(error, 8000);
-      return { ok: false, fidelity, elements: 0, dropped: [], error };
-    };
     if (opts?.path !== undefined) {
       const bad = drawingPathError(opts.path);
-      if (bad) return failed(bad);
+      if (bad) return notifyFailure(bad);
     }
     const eaCheck = this.requireEA();
-    if (!eaCheck.ok) return { ok: false, fidelity: "image", elements: 0, dropped: [], error: eaCheck.error };
+    if (!eaCheck.ok) return failed(eaCheck.error);
     const ea = eaCheck.ea;
     const conv = this.tryConvert(source);
-    if (!conv.ok) return { ok: false, fidelity: "image", elements: 0, dropped: [], error: conv.error };
+    if (!conv.ok) return failed(conv.error);
     const result = conv.result;
     const exists = (p: string) => !!this.app.vault.getAbstractFileByPath(p);
     const out = opts?.path ?? drawingPathFor(...await this.nameSource(source, opts?.sourcePath), exists);
     const existing = this.app.vault.getAbstractFileByPath(out);
     if (existing) {
-      if (!opts?.force || !(existing instanceof TFile)) return failed(`"${out}" already exists; pass force to overwrite.`, result.fidelity);
+      // Conversion ran, but nothing was written: keep its fidelity, report no elements.
+      if (!opts?.force || !(existing instanceof TFile)) return { ...notifyFailure(`"${out}" already exists; pass force to overwrite.`), fidelity: result.fidelity };
       await this.app.fileManager.trashFile(existing);
     }
     // Preferred: Excalidraw's CLI "create" (validates skeletons, materialises with the installed version).
@@ -191,7 +181,7 @@ export class ExcalidrawConverter implements ExcalidrawApi {
         if (res?.ok) {
           if (opts?.open !== false) await this.openDrawing(out);
           this.report(result);
-          return { ok: true, out, fidelity: result.fidelity, elements: result.elements.length, dropped: result.dropped };
+          return succeeded(result, out);
         }
       } catch { /* fall through to the EA workbench path */ }
     }
@@ -201,37 +191,29 @@ export class ExcalidrawConverter implements ExcalidrawApi {
       // `silent` keeps ea.create from opening the file, so open it here as the CLI path does.
       if (opts?.open !== false) await this.openDrawing(created ?? out);
       this.report(result);
-      return { ok: true, out: created ?? out, fidelity: result.fidelity, elements: result.elements.length, dropped: result.dropped };
+      return succeeded(result, created ?? out);
     } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      notice(error, 8000);
-      return { ok: false, fidelity: result.fidelity, elements: result.elements.length, dropped: result.dropped, error };
+      return notifyFailure(errorMessage(e), result);
     }
   }
 
-  async insertIntoView(source: string): Promise<Omit<DrawingResult, "out">> {
+  async insertIntoView(source: string): Promise<InsertResult> {
     const eaCheck = this.requireEA();
-    if (!eaCheck.ok) return { ok: false, fidelity: "image", elements: 0, dropped: [], error: eaCheck.error };
+    if (!eaCheck.ok) return failed(eaCheck.error);
     const ea = eaCheck.ea;
     const conv = this.tryConvert(source);
-    if (!conv.ok) return { ok: false, fidelity: "image", elements: 0, dropped: [], error: conv.error };
+    if (!conv.ok) return failed(conv.error);
     const result = conv.result;
     try {
       this.stage(ea, result);
       // addElementsToView needs ea.targetView; a fresh EA has none.
       ea.setView?.();
       const inserted = await ea.addElementsToView(true, true);
-      if (!inserted) {
-        const error = "no active Excalidraw drawing. Open a drawing first, or create a new one instead.";
-        notice(error, 8000);
-        return { ok: false, fidelity: result.fidelity, elements: result.elements.length, dropped: result.dropped, error };
-      }
+      if (!inserted) return notifyFailure("no active Excalidraw drawing. Open a drawing first, or create a new one instead.", result);
       this.report(result);
-      return { ok: true, fidelity: result.fidelity, elements: result.elements.length, dropped: result.dropped };
+      return succeeded(result);
     } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      notice(error, 8000);
-      return { ok: false, fidelity: result.fidelity, elements: result.elements.length, dropped: result.dropped, error };
+      return notifyFailure(errorMessage(e), result);
     }
   }
 

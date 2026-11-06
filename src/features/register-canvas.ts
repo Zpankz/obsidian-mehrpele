@@ -1,6 +1,6 @@
 /** Feature "canvas": diagram → canvas command, canvas → Mermaid commands and file menu. */
 import type { MarkdownView } from "obsidian";
-import { registerCanvasToMermaid } from "../canvas-convert-ui";
+import { registerCanvasToMermaid } from "../canvas/convert-ui";
 import { convertDiagramAtCursor } from "../editor-commands";
 import type { FeatureContext } from "./types";
 

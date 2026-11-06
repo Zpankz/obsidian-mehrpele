@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { presetThemeCss, type CanvasData } from "pele-render/canvas";
-import { canvasReferences, canvasToBlock, fenceFor, insertBlock, mermaidNoteBody, mermaidNoteName } from "../src/canvas-convert";
+import { canvasReferences, canvasToBlock, fenceFor, insertBlock, mermaidNoteBody, mermaidNoteName } from "../src/canvas/convert";
 import { normalizeSettings } from "../src/settings/v2";
 
 const settings = { portals: "link" as const, portalDepth: 1, layout: "canvas" as const };

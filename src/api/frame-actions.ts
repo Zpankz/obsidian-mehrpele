@@ -94,7 +94,7 @@ export class CompanionActions {
         drawn.delete(def.id);
         continue;
       }
-      const d = cur ?? this.create(bar, def, frame);
+      const d = cur ?? this.create(def, frame);
       d.handle = frame;
       if (d.icon !== icon) {
         setIcon(d.el, icon);
@@ -121,7 +121,7 @@ export class CompanionActions {
     if (!ordered) for (const el of want) bar.appendChild(el);
   }
 
-  private create(bar: HTMLElement, def: FrameActionDef, frame: FrameHandle): Drawn {
+  private create(def: FrameActionDef, frame: FrameHandle): Drawn {
     // Keyboard: role=button, a tab stop, Enter/Space (a11y.ts), like the built-ins.
     const el = asButton(createDiv());
     el.className = `embed-action ${COMPANION_ACTION_CLASS}`;

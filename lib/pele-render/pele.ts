@@ -5,7 +5,7 @@
  * same output for sources without the directive. Everything in pele-render
  * (and the Obsidian plugin) renders through this module, so sizes are
  * honoured by mount, render, check, Canvas and Excalidraw alike. Flowcharts
- * also honour `%% pele-layout canvas %%` positions (canvas/layout.ts).
+ * also honour `%% pele-layout canvas %%` positions (layout/layout.ts).
  */
 import { register } from "pele/core";
 import type { Diagram } from "pele";
@@ -44,7 +44,7 @@ import wardley from "pele/diagrams/wardley";
 import xychart from "pele/diagrams/xychart";
 import { SIZABLE_TYPES } from "./node-size/adapters.js";
 import { withNodeSizing } from "./node-size/solve.js";
-import { withCanvasLayout } from "./canvas/layout.js";
+import { withCanvasLayout } from "./layout/layout.js";
 
 const sizable = new Set<string>(SIZABLE_TYPES);
 const all: Diagram<unknown>[] = [

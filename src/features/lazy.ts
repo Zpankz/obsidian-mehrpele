@@ -27,12 +27,12 @@ export const edit = once<typeof import("../edit/index")>(() => require("../edit/
 export const floatActions = once<typeof import("../edit/float-actions")>(() => require("../edit/float-actions"));
 
 /** Repair, validation commands, SVG export: first command or repair. */
-export const repairHost = once<typeof import("../repair-host")>(() => require("../repair-host"));
+export const repairHost = once<typeof import("../repair/host")>(() => require("../repair/host"));
 export const editorCommands = once<typeof import("../editor-commands")>(() => require("../editor-commands"));
 
 /** Diagram → canvas: first conversion. */
 export const canvas = once<typeof import("pele-render/canvas")>(() => require("pele-render/canvas"));
-export const canvasFiles = once<typeof import("../cli-handlers")>(() => require("../cli-handlers"));
+export const canvasFiles = once<typeof import("../canvas/files")>(() => require("../canvas/files"));
 
 /** Settings tab definitions (built when the tab is added, for search); integration helpers: first use. */
 export const settingsTab = once<typeof import("../settings-tab/index")>(() => require("../settings-tab/index"));

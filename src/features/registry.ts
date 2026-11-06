@@ -67,14 +67,11 @@ export function scopedPlugin<P extends Plugin>(plugin: P, component: Component):
         return fn.bind(component);
       }
       if (key === "addCommand") {
-        return (cmd: Parameters<P["addCommand"]>[0]) => {
-          // addCommand rewrites cmd.id to "<plugin id>:<id>" and removeCommand
-          // adds the prefix again: keep the id as written.
-          const id = cmd.id;
-          const added = target.addCommand(cmd);
-          component.register(() => target.removeCommand(id));
-          return added;
-        };
+        // Called with the proxy as `this`: Obsidian's addCommand registers the
+        // command's removal through `this.register`, which lands on `component`,
+        // so the command leaves with the feature and nothing stays on the plugin.
+        const add = Reflect.get(target, key) as (...a: unknown[]) => unknown;
+        return (cmd: Parameters<P["addCommand"]>[0]) => Reflect.apply(add, receiver, [cmd]) as ReturnType<P["addCommand"]>;
       }
       const v = Reflect.get(target, key, receiver) as unknown;
       return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;

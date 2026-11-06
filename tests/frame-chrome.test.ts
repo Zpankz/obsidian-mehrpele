@@ -5,6 +5,8 @@
  *   while edit is off; with edit on the edit tools attach at construction.
  * - H1: suspend hands the frame to the host's suspended set; a host without
  *   one gets the frame destroyed.
+ * - The action bar's key scope (pushed while focus is in the bar) is popped
+ *   when the frame or shell is suspended or destroyed.
  */
 import "./helpers/dom-globals";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -137,7 +139,7 @@ const GLOBALS: Record<string, unknown> = {
   IntersectionObserver: deep(),
 };
 const saved = new Map<string, PropertyDescriptor | undefined>();
-let mod: { DiagramFrame: any; defaultSettingsV3: () => any };
+let mod: { DiagramFrame: any; MehrpeleShell: any; defaultSettingsV3: () => any };
 
 beforeAll(async () => {
   const r = await build({
@@ -146,6 +148,7 @@ beforeAll(async () => {
       // Built, not written out: the public export's import scan reads quoted `from` specifiers as this file's own imports.
       contents: [
         ["DiagramFrame", "diagram-frame"],
+        ["MehrpeleShell", "mehrpele/shell"],
         ["defaultSettingsV3", "settings/schema"],
       ]
         .map(([name, file]) => `export { ${name} } from ${JSON.stringify(`./src/${file}`)};`)
@@ -182,7 +185,14 @@ afterAll(() => {
   }
 });
 
+/** Obsidian's keymap: what was pushed and popped. */
+function keymapApp() {
+  const k = { pushed: [] as unknown[], popped: [] as unknown[] };
+  return { k, app: { scope: {}, keymap: { pushScope: (s: unknown) => void k.pushed.push(s), popScope: (s: unknown) => void k.popped.push(s) } } };
+}
+
 function host(opts: { edit: boolean; resize?: boolean; suspend?: boolean }) {
+  const { k, app } = keymapApp();
   const settings = mod.defaultSettingsV3();
   settings.features.toolbar.enabled = opts.edit;
   settings.features["inline-edit"].enabled = opts.edit;
@@ -194,6 +204,8 @@ function host(opts: { edit: boolean; resize?: boolean; suspend?: boolean }) {
     registered: 0,
     unregistered: 0,
     suspended: [] as unknown[],
+    keys: k,
+    app,
     settings: () => settings,
     repair() {},
     openLightbox() {},
@@ -256,6 +268,27 @@ describe("DiagramFrame chrome (M2)", () => {
     f.destroy();
   });
 
+  test("edit turned off: applySettings detaches the edit tools; the next hover attaches them again", () => {
+    const h = host({ edit: true });
+    const f = new mod.DiagramFrame(h, frameOpts);
+    f.root.fire("pointerover");
+    expect(h.attached).toBe(1);
+    h.settings().features.toolbar.enabled = false;
+    h.settings().features["inline-edit"].enabled = false;
+    f.applySettings();
+    expect(h.disposed).toBe(1);
+    // Like a frame never hovered: the first pointerover (or focus) attaches.
+    expect(f.root.count("pointerover")).toBe(1);
+    f.root.fire("pointerover");
+    expect(h.attached).toBe(2);
+    // An unrelated settings change while edit stays off keeps the hover-attached tools.
+    f.applySettings();
+    expect(h.disposed).toBe(1);
+    f.destroy();
+    expect(h.disposed).toBe(2);
+    expect(f.root.count("pointerover")).toBe(0);
+  });
+
   test("edit off: keyboard focus builds the chrome too (action tooltips get their hints)", () => {
     mutationObservers = 0;
     const h = host({ edit: false });
@@ -285,6 +318,73 @@ describe("DiagramFrame chrome (M2)", () => {
   });
 });
 
+describe("MehrpeleShell edit attach", () => {
+  function shellPlugin(edit: boolean) {
+    const settings = mod.defaultSettingsV3();
+    settings.features.toolbar.enabled = edit;
+    const { k, app } = keymapApp();
+    const p = {
+      settings,
+      app,
+      keys: k,
+      attached: 0,
+      disposed: 0,
+      attachEdit: () => {
+        p.attached++;
+        return () => void p.disposed++;
+      },
+      registerMehr() {},
+      unregisterMehr() {},
+    };
+    return p;
+  }
+  const shellOpts = { source: "graph TD\n  A --> B\n", lang: "mehrpele", sourcePath: "x.md", onRevealCode() {} };
+  const component = { addChild() {}, removeChild() {} };
+
+  test("edit off: attaches on the first hover; edit on: at construction", () => {
+    const off = shellPlugin(false);
+    const s = new mod.MehrpeleShell(off, component, shellOpts);
+    expect(off.attached).toBe(0);
+    s.root.fire("pointerover");
+    expect(off.attached).toBe(1);
+    expect(s.root.count("pointerover")).toBe(0);
+    s.destroy();
+    expect(off.disposed).toBe(1);
+    const on = shellPlugin(true);
+    const t = new mod.MehrpeleShell(on, component, shellOpts);
+    expect(on.attached).toBe(1);
+    t.destroy();
+  });
+
+  test("edit turned off: syncEdit detaches; the next hover attaches again", () => {
+    const p = shellPlugin(true);
+    const s = new mod.MehrpeleShell(p, component, shellOpts);
+    p.settings.features.toolbar.enabled = false;
+    s.syncEdit();
+    expect(p.disposed).toBe(1);
+    s.syncEdit();
+    expect(p.disposed).toBe(1);
+    s.root.fire("focusin");
+    expect(p.attached).toBe(2);
+    s.syncEdit(); // still off, attached by focus: kept
+    expect(p.disposed).toBe(1);
+    s.destroy();
+    expect(p.disposed).toBe(2);
+    expect(s.root.count("pointerover")).toBe(0);
+    expect(s.root.count("focusin")).toBe(0);
+  });
+
+  test("destroy pops the action bar's key scope", () => {
+    const p = shellPlugin(false);
+    const s = new mod.MehrpeleShell(p, component, shellOpts);
+    s.actionBar.fire("focusin");
+    expect(p.keys.pushed.length).toBe(1);
+    s.destroy();
+    expect(p.keys.popped).toEqual(p.keys.pushed);
+    expect(s.actionBar.count("focusin")).toBe(0);
+  });
+});
+
 describe("DiagramFrame suspend (H1)", () => {
   test("suspend unregisters and hands the frame to the host's suspended set", () => {
     resizeObservers = 0;
@@ -307,6 +407,23 @@ describe("DiagramFrame suspend (H1)", () => {
     f.suspend(() => {});
     expect(h.disposed).toBe(1);
     expect(resizeObservers).toBe(0);
+  });
+});
+
+describe("DiagramFrame action bar keys", () => {
+  test("suspend pops the key scope, a revive's focus pushes it again, destroy pops it and drops the listeners", () => {
+    const h = host({ edit: false });
+    const f = new mod.DiagramFrame(h, frameOpts);
+    f.actionBar.fire("focusin");
+    expect(h.keys.pushed.length).toBe(1);
+    f.suspend(() => {});
+    expect(h.keys.popped).toEqual(h.keys.pushed);
+    f.actionBar.fire("focusin");
+    expect(h.keys.pushed.length).toBe(2);
+    f.destroy();
+    expect(h.keys.popped).toEqual(h.keys.pushed);
+    expect(f.actionBar.count("focusin")).toBe(0);
+    expect(f.actionBar.count("focusout")).toBe(0);
   });
 });
 

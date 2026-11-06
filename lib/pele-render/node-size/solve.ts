@@ -19,12 +19,8 @@ import type { Diagram, RenderOptions } from "pele";
 import { lintSizeDirective, type NodeSize } from "./directive.js";
 import { sizableNodes, type SizeCaps } from "./adapters.js";
 import { nodeBoxMap, type Box } from "./svgbox.js";
-
-/** Pele's parse/render argument and result types (not exported by name). */
-type ParseArgs = Parameters<Diagram<unknown>["parse"]>;
-type Config = ParseArgs[1];
-type ParseLimits = ParseArgs[4];
-type Rendered = ReturnType<Diagram<unknown>["render"]>;
+import { decodeEntities } from "../svg/read.js";
+import { wrapDiagram, type ParseRest, type RenderArgs, type Rendered } from "../directive/wrap.js";
 
 /**
  * Width filler fence (stripped from the SVG). Zero-width characters, so the
@@ -38,8 +34,6 @@ export const FILL_CLOSE = "\u200C\u200D";
 export const JOINER = "\uE012";
 const FILL_RE = /\u200D\u200C[0']*\u200C\u200D/g;
 const JOINER_RE = /\uE012/g;
-/** Pele/Mermaid comment removal (bundle's cleanupComments). */
-const COMMENT_RE = /^\s*%%(?!{)[^\n]+\n?/gm;
 const META = Symbol.for("pele-render.node-size");
 /** Width of "'" relative to "0" (approximate; the solver measures). */
 const FINE_RATIO = 0.36;
@@ -67,13 +61,15 @@ export interface NodeSizeResult {
   nodeSizes?: Record<string, NodeSizeInfo>;
 }
 
+type ParseArgs = ParseRest<unknown>;
+
 interface Meta {
   sizes: Map<string, NodeSize>;
   text: string;
-  config: Config;
-  title: string | undefined;
+  config: ParseArgs[0];
+  title: ParseArgs[1];
   lineOffset: number;
-  limits: ParseLimits;
+  limits: ParseArgs[3];
 }
 
 interface PlanState {
@@ -209,44 +205,25 @@ function buildLabel(p: Plan, s: PlanState): string {
 // -- the wrapper --------------------------------------------------------------
 
 
-/** Source without Pele/Mermaid `%%` comment lines (what Pele parses). */
-export function stripComments(source: string): string {
-  return (source.includes("%%") ? source.replace(COMMENT_RE, "") : source).trimStart();
-}
-
 /** Wrap one Pele diagram so `%% pele-size … %%` entries size its nodes. */
 export function withNodeSizing<M>(d: Diagram<M>): Diagram<M> {
-  if ((d as unknown as Record<symbol, unknown>)[META]) return d;
-  const wrapped: Diagram<M> = {
-    ...d,
-    keepComments: true,
-    parse(source, config, title, lineOffset, limits) {
-      const text = d.keepComments ? source : stripComments(source);
-      const model = d.parse(text, config, title, lineOffset, limits);
-      if (source.includes("pele-size") && model && typeof model === "object") {
-        const { sizes } = lintSizeDirective(source);
-        if (sizes.size) {
-          const meta: Meta = { sizes, text, config, title, lineOffset, limits };
-          Object.defineProperty(model, META, { value: meta, enumerable: false, configurable: true });
-        }
-      }
-      return model;
+  return wrapDiagram<M, Meta>(d, META, {
+    marker: "pele-size",
+    read(source, text, config, title, lineOffset, limits) {
+      const { sizes } = lintSizeDirective(source);
+      return sizes.size ? { sizes, text, config, title, lineOffset, limits } : undefined;
     },
-    render(model, config, options) {
-      const meta = (model as Record<symbol, unknown> | null | undefined)?.[META] as Meta | undefined;
-      if (!meta) return d.render(model, config, options);
+    render(model, meta, config, options) {
       try {
         return solve(d, model, meta, config, options);
       } catch {
         return d.render(model, config, options);
       }
     },
-  };
-  Object.defineProperty(wrapped, META, { value: true, enumerable: false });
-  return wrapped;
+  });
 }
 
-function solve<M>(d: Diagram<M>, model: M, meta: Meta, config: Config, options: RenderOptions): Rendered & NodeSizeResult {
+function solve<M>(d: Diagram<M>, model: M, meta: Meta, config: RenderArgs<M>[1], options: RenderOptions): Rendered<M> & NodeSizeResult {
   const fs = typeof options?.fontSize === "number" && options.fontSize > 0 ? options.fontSize : 16;
   // Height lines: pele 1.9+ lays multi-line labels (any label with filler
   // lines) on a 1.3 em grid. Half of it is the height tolerance; a looser one
@@ -290,7 +267,7 @@ function solve<M>(d: Diagram<M>, model: M, meta: Meta, config: Config, options: 
   }
   if (plans.length === 0) return d.render(model, config, options);
 
-  let out = null as Rendered | null;
+  let out: Rendered<M> | undefined;
   let boxes = new Map<string, Box>();
   let rendered = "";
   const stateKey = (): string => safeJson(plans.map((p) => [p.state.c === Infinity ? "inf" : p.state.c, p.state.fill, p.state.extra]));
@@ -395,11 +372,9 @@ function solve<M>(d: Diagram<M>, model: M, meta: Meta, config: Config, options: 
   cache.delete(key);
   cache.set(key, toCache);
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
-  return { ...out!, svg: centreSizedLabels(cleanSizedText(out!.svg), new Set(plans.map((p) => p.id))), nodeSizes };
-}
-
-function decodeAttr(s: string): string {
-  return s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  // MAX_PASSES > 0, so renderPass has run.
+  if (!out) return d.render(model, config, options);
+  return { ...out, svg: centreSizedLabels(cleanSizedText(out.svg), new Set(plans.map((p) => p.id))), nodeSizes };
 }
 
 /**
@@ -409,10 +384,9 @@ function decodeAttr(s: string): string {
  */
 export function centreSizedLabels(svg: string, ids: Set<string>): string {
   if (ids.size === 0) return svg;
-  return svg.replace(/<g\b[^>]*\bclass="[^"]*\bpele-node\b[^"]*"[^>]*\sdata-id="([^"]*)"[^>]*>/g, (open, rawId: string, at: number) => {
-    void at;
-    return ids.has(decodeAttr(rawId)) ? `${open}\u0000` : open;
-  }).replace(/\0((?:(?!<\/text>)[\s\S])*?)(<text class="pele-label"[^>]*>)((?:<tspan[^>]*>[^<]*<\/tspan>)+)(<\/text>)/g, (_m, pre: string, open: string, spans: string, close: string) => {
+  return svg.replace(/<g\b[^>]*\bclass="[^"]*\bpele-node\b[^"]*"[^>]*\sdata-id="([^"]*)"[^>]*>/g, (open, rawId: string) =>
+    ids.has(decodeEntities(rawId)) ? `${open}\u0000` : open,
+  ).replace(/\0((?:(?!<\/text>)[\s\S])*?)(<text class="pele-label"[^>]*>)((?:<tspan[^>]*>[^<]*<\/tspan>)+)(<\/text>)/g, (_m, pre: string, open: string, spans: string, close: string) => {
     const list = [...spans.matchAll(/<tspan([^>]*)\sy="([-\d.e+]+)"([^>]*)>([^<]*)<\/tspan>/g)];
     if (list.length < 2) return pre + open + spans + close;
     const blank = (t: string) => t.trim() === "";
@@ -499,7 +473,8 @@ function advanceShape(p: Plan, s: Sample): void {
   const score = s.w <= W + 1 ? shapeScore(W, H, s.w, s.h) : 0;
   const best = p.shapeBest;
   const gain = best && !Number.isFinite(best.c) ? SPLIT_GAIN : 1e-6;
-  if (!best || score > best.score * (1 + gain)) p.shapeBest = { c: s.c, score };
+  const top = !best || score > best.score * (1 + gain) ? { c: s.c, score } : best;
+  p.shapeBest = top;
   const worse = !!best && score < best.score;
   const next = worse ? undefined : p.shapeCands?.shift();
   if (next !== undefined) {
@@ -507,7 +482,7 @@ function advanceShape(p: Plan, s: Sample): void {
     return;
   }
   p.phase = "fit";
-  p.state = { ...p.state, c: p.shapeBest!.c };
+  p.state = { ...p.state, c: top.c };
 }
 
 function nextFill(p: Plan, s: Sample, fs: number): number {

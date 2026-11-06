@@ -541,9 +541,7 @@ function applyText(ctx: EditContext, kind: DiagramKind, target: EditTarget, rawT
     const k = mindIndex(ctx, target.id);
     const n = mindNodes(src)[k];
     if (!n || !text.trim()) return fail("Pele: a node needs text.");
-    const before = labelText(src.slice(n.textSpan.start, n.textSpan.end), ctx.markdownBlock);
     const f = formatLabel(text, { markdownBlock: ctx.markdownBlock, canSwitch: ctx.canSwitch, wasQuoted: src.slice(n.textSpan.start, n.textSpan.end).trim().startsWith('"') });
-    void before;
     let next: string | null;
     if (n.shape.key === "default" && f.quoted) {
       // A bare line cannot hold a quoted label: it gains square brackets.

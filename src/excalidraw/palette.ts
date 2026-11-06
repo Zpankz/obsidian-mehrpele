@@ -14,8 +14,3 @@ export function resolvePalette(getVar: (name: string) => string): Record<string,
   }
   return out;
 }
-
-/** JSON envelope returned by the `pele:excalidraw` CLI handler and public API. */
-export function cliResultJson(payload: { ok: boolean; out?: string; fidelity?: string; elements?: number; dropped?: string[]; error?: string }): string {
-  return JSON.stringify(payload, null, 2);
-}

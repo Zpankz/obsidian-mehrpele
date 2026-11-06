@@ -7,8 +7,8 @@ import { extractMermaidBlocks, DIAGRAM_FENCE_LANGS } from "pele-render/extract";
 export interface DiagramBlock { lang: string; code: string; startLine: number; endLine: number }
 
 /** Diagram blocks in document order; `startLine`/`endLine` are 0-based fence lines. */
-export function extractBlocks(markdown: string, langs: readonly string[] = DIAGRAM_FENCE_LANGS): DiagramBlock[] {
-  return extractMermaidBlocks(markdown, { langs }).map((b) => ({
+export function extractBlocks(markdown: string): DiagramBlock[] {
+  return extractMermaidBlocks(markdown, { langs: DIAGRAM_FENCE_LANGS }).map((b) => ({
     lang: b.lang.toLowerCase(),
     code: b.source,
     startLine: b.startLine - 1,

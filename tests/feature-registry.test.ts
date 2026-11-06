@@ -41,6 +41,22 @@ describe("FeatureRegistry", () => {
     expect([...plugin.commands.keys()]).toEqual(["mehrpele:canvas-cmd"]);
   });
 
+  test("on/off cycles leave no command cleanups on the plugin; each command is removed once", async () => {
+    const on = new Set(["canvas"]);
+    const { plugin, reg } = setup([commandFeature("canvas")], on);
+    const base = plugin._cleanups.length;
+    for (let i = 0; i < 3; i++) {
+      on.add("canvas");
+      await reg.sync();
+      expect(plugin.commands.has("mehrpele:canvas-cmd")).toBe(true);
+      on.delete("canvas");
+      await reg.sync();
+      expect(plugin.commands.has("mehrpele:canvas-cmd")).toBe(false);
+      expect(plugin._cleanups.length).toBe(base);
+    }
+    expect(plugin.removed).toEqual(["mehrpele:canvas-cmd", "mehrpele:canvas-cmd", "mehrpele:canvas-cmd"]);
+  });
+
   test("a feature turned off while loading never registers", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));

@@ -3,7 +3,7 @@ import {
   Notice,
   requestUrl
 } from "obsidian";
-import { DiagramFrame } from "./diagram-frame";
+import { DiagramFrame } from "../diagram-frame";
 import {
   createAnthropicProvider,
   createJevHttpProvider,
@@ -11,67 +11,62 @@ import {
   type LlmProvider,
   type RepairResult
 } from "pele-render/repair";
-import { makeFetchLike } from "./repair-fetch";
-import { repairNeedsReview, repairOptions, toRepairOptions, type RepairSettings } from "./repair-settings";
-import type PeleMermaidPlugin from "../main";
-import { MehrpeleShell } from "./mehrpele/shell";
-import { RepairPreviewModal, RepairFailureModal } from "./repair-modals";
+import { makeFetchLike } from "./fetch";
+import { repairNeedsReview, repairOptions, toRepairOptions, type RepairSettings } from "../repair-settings";
+import { applyRepairResult, confirmRepair, type RepairTarget } from "./apply";
+import type PeleMermaidPlugin from "../../main";
+import { MehrpeleShell } from "../mehrpele/shell";
 
-/** 1-click repair for a Mehrpele shell (same tiers/apply contract as frames). */
-export async function repairShell(plugin: PeleMermaidPlugin, shell: MehrpeleShell): Promise<void> {
-  if (shell.isRepairBusy) return;
-  if (!shell.canApplyRepair) {
+/** A frame or Mehrpele shell offering 1-click repair. */
+interface OneClickTarget extends RepairTarget {
+  readonly isRepairBusy: boolean;
+  readonly canApplyRepair: boolean;
+  setRepairBusy(busy: boolean): void;
+}
+
+/** Run the configured tiers on `target` behind its busy state, then hand the result to `onResult`. */
+function runOneClickRepair(
+  plugin: PeleMermaidPlugin,
+  target: OneClickTarget,
+  onResult: (result: RepairResult) => Promise<void>,
+): void {
+  if (target.isRepairBusy) return;
+  if (!target.canApplyRepair) {
     new Notice("Pele: repair can't write back here. Canvas and embeds are read-only; open the note to repair.");
     return;
   }
-  shell.setRepairBusy(true);
+  target.setRepairBusy(true);
+  // Yield so the spinner paints before any synchronous linter work.
   window.setTimeout(() => {
     void (async () => {
       try {
         const result = await repairDiagram(
-          shell.source,
+          target.source,
           toRepairOptions(repairOptions(plugin.settings), {
             jev: buildJevProvider(plugin),
             llm: buildLlmProvider(plugin),
           }),
         );
-        if (!result.ok || !result.source) {
-          const tiersRan = result.attempts.map((a) => a.tier).join(" → ") || "none";
-          new RepairFailureModal(
-            plugin.app,
-            result.error?.message ?? "no tier could fix this diagram",
-            tiersRan,
-            shell.source,
-          ).open();
-          return;
-        }
-        if (result.unchanged || result.source === shell.source) {
-          new Notice("Pele: diagram is already valid.");
-          return;
-        }
-        if (repairNeedsReview(result, repairOptions(plugin.settings))) {
-          if (!(await confirmRepair(plugin, shell.source, result))) return;
-        }
-        const applied = await shell.applyRepaired(result.source);
-        if (!applied) {
-          new Notice("Pele: could not locate that diagram to apply the repair; nothing changed.");
-          return;
-        }
-        const droppedNote = result.lossy
-          ? ` (lossy): removed/commented ${result.dropped && result.dropped.length > 0 ? result.dropped.join(", ") : "content"}`
-          : "";
-        const fixes = (result.fixes.length > 0 ? result.fixes.join("; ") : "fixed") + droppedNote;
-        new Notice(`Repaired by ${result.tier ?? "linter"}: ${fixes}. Cmd/Ctrl+Z to undo in Live Preview.`, 8000);
+        await onResult(result);
       } catch (e) {
         new Notice(`Pele: repair failed: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
-        shell.setRepairBusy(false);
+        target.setRepairBusy(false);
       }
     })();
   }, 0);
 }
 
-export function repairFetch(plugin: PeleMermaidPlugin) {
+/** 1-click repair for a Mehrpele shell (same tiers/apply contract as frames). */
+export async function repairShell(plugin: PeleMermaidPlugin, shell: MehrpeleShell): Promise<void> {
+  runOneClickRepair(plugin, shell, async (result) => {
+    const applied = await applyRepairResult(plugin, shell, result);
+    if (applied) new Notice(`${applied.summary}. Cmd/Ctrl+Z to undo in Live Preview.`, 8000);
+  });
+}
+
+/** Provider fetch over Obsidian's requestUrl (CORS-free; non-2xx statuses come back, not thrown). */
+export function repairFetch() {
   return makeFetchLike(async (req) => {
     const r = await requestUrl({
       url: req.url,
@@ -100,7 +95,7 @@ export function buildJevProvider(plugin: PeleMermaidPlugin, r: RepairSettings = 
     apiKey: key,
     baseUrl: r.jevBaseUrl,
     model: r.jevModel,
-    fetch: repairFetch(plugin),
+    fetch: repairFetch(),
   });
 }
 
@@ -109,14 +104,14 @@ export function buildLlmProvider(plugin: PeleMermaidPlugin, r: RepairSettings = 
   if (r.llmProvider === "anthropic") {
     const key = secret(plugin, r.anthropicKeySecretId);
     if (!key) return undefined;
-    return createAnthropicProvider({ apiKey: key, model: r.llmModel, fetch: repairFetch(plugin) });
+    return createAnthropicProvider({ apiKey: key, model: r.llmModel, fetch: repairFetch() });
   }
   const key = secret(plugin, r.openaiKeySecretId);
   return createOpenAICompatibleProvider({
     baseUrl: r.llmBaseUrl || "https://api.openai.com/v1",
     model: r.llmModel,
     ...(key ? { apiKey: key } : {}),
-    fetch: repairFetch(plugin),
+    fetch: repairFetch(),
     reasoningEffort: r.llmReasoningEffort,
     timeoutMs: Math.max(1, r.llmTimeoutSec || 120) * 1000,
   });
@@ -124,68 +119,21 @@ export function buildLlmProvider(plugin: PeleMermaidPlugin, r: RepairSettings = 
 
 /** 1-click repair entry (frame button, context of a live frame). */
 export async function repairFrame(plugin: PeleMermaidPlugin, frame: DiagramFrame): Promise<void> {
-  if (frame.isRepairBusy) return;
-  if (!frame.canApplyRepair) {
-    new Notice("Pele: repair can't write back here. Canvas and embeds are read-only; open the note to repair.");
-    return;
-  }
-  frame.setRepairBusy(true);
-  // Yield so the spinner paints before any synchronous linter work.
-  window.setTimeout(() => {
-    void (async () => {
-      try {
-        const result = await repairDiagram(
-          frame.source,
-          toRepairOptions(repairOptions(plugin.settings), {
-            jev: buildJevProvider(plugin),
-            llm: buildLlmProvider(plugin),
-          }),
-        );
-        await handleRepairResult(plugin, frame, result);
-      } catch (e) {
-        new Notice(`Pele: repair failed: ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
-        frame.setRepairBusy(false);
-      }
-    })();
-  }, 0);
+  runOneClickRepair(plugin, frame, (result) => handleRepairResult(plugin, frame, result));
 }
 
 export async function handleRepairResult(plugin: PeleMermaidPlugin, frame: DiagramFrame, result: RepairResult): Promise<void> {
-  const tiersRan = result.attempts.map((a) => a.tier).join(" → ") || "none";
-  if (!result.ok || !result.source) {
-    const msg = result.error?.message ?? "no tier could fix this diagram";
-    new RepairFailureModal(plugin.app, msg, tiersRan, frame.source).open();
-    return;
-  }
-  if (result.unchanged || result.source === frame.source) {
-    new Notice("Pele: diagram is already valid.");
-    return;
-  }
-  // Lossy repairs (content removed/commented out) and Jev/LLM results always
-  // require the confirm modal, even when "Preview before applying" is off.
-  if (repairNeedsReview(result, repairOptions(plugin.settings))) {
-    if (!(await confirmRepair(plugin, frame.source, result))) return;
-  }
-  const oldSource = frame.source;
-  const applied = await frame.applyRepaired(result.source);
-  if (!applied) {
-    new Notice("Pele: could not locate that diagram to apply the repair; nothing changed.");
-    return;
-  }
-  const droppedNote = result.lossy
-    ? ` (lossy): removed/commented ${result.dropped && result.dropped.length > 0 ? result.dropped.join(", ") : "content"}`
-    : "";
-  const fixes = (result.fixes.length > 0 ? result.fixes.join("; ") : "fixed") + droppedNote;
+  const applied = await applyRepairResult(plugin, frame, result);
+  if (!applied) return;
   const inLp = !!frame.root.closest(".cm-preview-code-block");
   if (inLp) {
-    new Notice(`Repaired by ${result.tier ?? "linter"}: ${fixes}. Cmd/Ctrl+Z to undo.`, 8000);
+    new Notice(`${applied.summary}. Cmd/Ctrl+Z to undo.`, 8000);
   } else {
-    const notice = new Notice(`Repaired by ${result.tier ?? "linter"}: ${fixes}`, 10_000);
+    const notice = new Notice(applied.summary, 10_000);
     try {
       const btn = notice.messageEl.createEl("button", { text: "Undo", cls: "pele-notice-undo" });
       btn.addEventListener("click", () => {
-        void frame.applyRepairSwap(oldSource, result.source!).then((ok) => {
+        void frame.applyRepairSwap(applied.oldSource, result.source!).then((ok) => {
           new Notice(ok ? "Pele: repair undone." : "Pele: undo failed (diagram changed).");
           notice.hide();
         });
@@ -250,20 +198,6 @@ export async function fetchOllamaModels(plugin: PeleMermaidPlugin): Promise<void
   } catch {
     new Notice("Pele: Ollama is unreachable at localhost:11434.");
   }
-}
-
-/** Diff preview; resolves true when the user applies. */
-export function confirmRepair(plugin: PeleMermaidPlugin, oldSource: string, result: RepairResult): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    new RepairPreviewModal(
-      plugin.app,
-      oldSource,
-      result.source ?? oldSource,
-      resolve,
-      result.lossy ? result.dropped : undefined,
-      result.tier === "jev" || result.tier === "llm" ? result.tier : undefined,
-    ).open();
-  });
 }
 
 /** Repair a source string with caller-provided apply (commands). */

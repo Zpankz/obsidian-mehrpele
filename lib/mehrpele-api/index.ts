@@ -18,8 +18,8 @@ import type { CanvasData } from "obsidian/canvas";
 // can trigger a workspace event, so the argument is `unknown`: treat it as a hint only.
 declare module "obsidian" {
   interface Workspace {
-    on(name: "mehrpele:api-ready", callback: (api?: unknown) => unknown, ctx?: unknown): EventRef;
-    on(name: "mehrpele:api-unload", callback: (api?: unknown) => unknown, ctx?: unknown): EventRef;
+    on(name: MehrpeleApiReadyEvent, callback: (api?: unknown) => unknown, ctx?: unknown): EventRef;
+    on(name: MehrpeleApiUnloadEvent, callback: (api?: unknown) => unknown, ctx?: unknown): EventRef;
   }
 }
 
@@ -151,6 +151,7 @@ export interface MehrpeleApiV1Core {
 
 /** apiMinor 1: everything a companion needs to work on rendered diagrams. */
 export interface MehrpeleApiV1 extends MehrpeleApiV1Core {
+  /** At least `MehrpeleApiMinorFrames`; later minors only add optional members. */
   readonly apiMinor: number;
   frames: {
     list(): FrameHandle[];

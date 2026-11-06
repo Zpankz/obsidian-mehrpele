@@ -11,22 +11,25 @@
  * directive inside a quoted (nested-diagram) label belongs to that inner
  * diagram. Pure: no Pele, no DOM.
  */
+import { parseId, quoteId } from "../directive/id.js";
+
+export { quoteId };
 
 export interface NodeSize {
   w?: number;
   h?: number;
 }
 
+const SIZE_LINE_RE = /^[ \t]*%%[ \t]*pele-size\b.*%%[ \t]*$/;
+/** One directive line: group 1 = the entries. */
+const SIZE_BODY_RE = /^[ \t]*%%[ \t]*pele-size\b(.*?)%%[ \t]*$/;
 /**
  * One directive line (global/multiline): group 1 = the entries.
  * @deprecated Also matches lines inside a nested label, which the parser
  * ignores. Use `parseSizeDirective`, or `topLevelLines` to find lines.
  */
-export const SIZE_DIRECTIVE_RE = /^[ \t]*%%[ \t]*pele-size\b(.*?)%%[ \t]*$/gm;
-const SIZE_LINE_RE = /^[ \t]*%%[ \t]*pele-size\b.*%%[ \t]*$/;
-const SIZE_BODY_RE = /^[ \t]*%%[ \t]*pele-size\b(.*?)%%[ \t]*$/;
+export const SIZE_DIRECTIVE_RE = new RegExp(SIZE_BODY_RE.source, "gm");
 const ENTRY_RE = /("(?:[^"\\]|\\.)*"|[^\s=]+)=(\S*)/g;
-const BARE_ID = /^[\p{L}\p{N}_.:-]+$/u;
 
 /** Largest accepted dimension (SVG units). */
 export const MAX_NODE_SIZE = 10000;
@@ -47,16 +50,6 @@ function parseValue(raw: string): NodeSize | null {
   const ok = (v: number | undefined) => v === undefined || (v >= 1 && v <= MAX_NODE_SIZE);
   if (!ok(w) || !ok(h)) return null;
   return { ...(w !== undefined ? { w } : {}), ...(h !== undefined ? { h } : {}) };
-}
-
-function parseId(raw: string): string | null {
-  if (!raw.startsWith('"')) return raw;
-  try {
-    const v = JSON.parse(raw) as unknown;
-    return typeof v === "string" && v ? v : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -140,10 +133,6 @@ export function hasSizeDirective(source: string): boolean {
   return directiveLines(source).length > 0;
 }
 
-export function quoteId(id: string): string {
-  return BARE_ID.test(id) ? id : JSON.stringify(id);
-}
-
 export function formatSize(size: NodeSize): string {
   const w = size.w !== undefined ? String(Math.round(size.w)) : "";
   const h = size.h !== undefined ? `x${Math.round(size.h)}` : "";
@@ -203,8 +192,8 @@ export function withNodeSize(source: string, id: string, size: NodeSize | null, 
     if (sizes.has(id)) {
       const ordered = new Map<string, NodeSize>();
       for (const [k] of sizes) {
-        if (k === id) ordered.set(k, clean);
-        else if (next.has(k)) ordered.set(k, next.get(k)!);
+        const kept = k === id ? clean : next.get(k);
+        if (kept) ordered.set(k, kept);
       }
       return sameDirective(source, ordered) ? source : withSizeDirective(source, ordered);
     }

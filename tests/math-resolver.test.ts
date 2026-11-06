@@ -145,7 +145,7 @@ describe("diagram math resolver (core 1.15 WB parity)", () => {
       deps: f.deps,
       links: () => true,
       rerender: () => {},
-      measure: (el, size) => (sizes.push(size), { width: 30, height: 12 }),
+      measure: (_el, size) => (sizes.push(size), { width: 30, height: 12 }),
       doc,
     });
     const r = dm.math("\\frac{a}{b}", 16);

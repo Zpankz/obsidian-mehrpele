@@ -1,6 +1,7 @@
 /**
  * Builds main.ts the way esbuild.config.mjs does (same externals, aliases,
- * format), in memory, for the lazy-loading tests. Keep the two in step.
+ * format), in memory, for the lazy-loading tests. tests/build-config-parity.test.ts
+ * fails when the two (or tsconfig paths) drift.
  */
 import { build, type Metafile, type Plugin } from "esbuild";
 import { existsSync } from "node:fs";
@@ -54,9 +55,8 @@ export const FEATURE_CODE: readonly RegExp[] = [
   /^src\/materialise\//,
   /^src\/integrations\//,
   /^src\/cli\//,
-  /^src\/cli-handlers\.ts$/,
-  /^src\/canvas-convert(-ui)?\.ts$/,
-  /^src\/repair-(host|modals)\.ts$/,
+  /^src\/canvas\//,
+  /^src\/repair\//,
   /^src\/excalidraw\//,
   // The Excalidraw converter (feature "excalidraw").
   /^(\.\.\/pele-render\/src|lib\/pele-render)\/excalidraw\//,

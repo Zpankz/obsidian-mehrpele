@@ -9,7 +9,7 @@ import { forgetTextWidths } from "pele-render/pele";
 import type PeleMermaidPlugin from "../../main";
 import { isEnabledV3, normalizeInPlace, TOGGLE_IDS, type ToggleId } from "../settings/schema";
 import { requestUrlGet } from "./assets";
-import type { PluginManagerLike } from "./companions";
+import { FLOWS, type PluginManagerLike } from "./companions";
 import { INTEGRATION_BLOCKS } from "./integration-blocks";
 import { settingsTab } from "./lazy";
 import { FEATURES } from "./registry";
@@ -27,6 +27,9 @@ export class LazySettingTab extends PluginSettingTab {
   private parts: ReturnType<typeof settingsTab> | null = null;
   private folds: InstanceType<ReturnType<typeof settingsTab>["FoldState"]> | null = null;
   private readonly toggleKeys: Map<string, ToggleId>;
+  private readonly flowRows = new Map<HTMLElement, () => void>();
+  private readonly enabling = new Map<string, Promise<void>>();
+  private flowDefinition: SettingDefinitionItem | null = null;
 
   constructor(private readonly plugin: PeleMermaidPlugin) {
     super(plugin.app, plugin);
@@ -49,7 +52,7 @@ export class LazySettingTab extends PluginSettingTab {
     const t = this.tab();
     this.folds ??= new t.FoldState(this.app);
     const app = this.app as unknown as { setting?: { openTabById?(id: string): unknown } };
-    return t.buildDefinitions({
+    const definitions = t.buildDefinitions({
       app: this.app,
       value: (key) => this.getControlValue(key),
       set: (key, v) => this.setControlValue(key, v),
@@ -57,6 +60,8 @@ export class LazySettingTab extends PluginSettingTab {
       pendingReload: (id) => this.plugin.features?.pendingReload.has(id) ?? false,
       needsReload: (id) => FEATURES.some((d) => d.id === id && d.kind === "module" && d.reload === "needed"),
       plugins: () => this.pluginManager,
+      flows: () => this.plugin.flowStatus(),
+      watchFlows: (el, paint) => this.flowRows.set(el, paint),
       folds: this.folds,
       ollamaModels: () => this.plugin.ollamaModels,
       excalidrawStandsDown: () => this.plugin.excalidrawStandsDown(),
@@ -84,13 +89,84 @@ export class LazySettingTab extends PluginSettingTab {
         installTour: () => this.tour("install"),
         removeTour: () => this.tour("remove"),
         openCommunityPlugins: () => void app.setting?.openTabById?.("community-plugins"),
-        openPluginPage: (id) => void window.open(`obsidian://show-plugin?id=${encodeURIComponent(id)}`),
-        enablePlugin: async (id) => {
-          await this.pluginManager?.enablePluginAndSave?.(id);
-          this.update();
-        },
+        openPluginPage: (id) => this.openPluginPage(id),
+        enablePlugin: (id) => this.enableAddon(id),
+        openPluginSettings: (id) => void this.openPluginSettings(id),
+        updateHost: () => this.openPluginPage(this.plugin.manifest.id),
       },
     });
+    const addons = definitions.find((d) => "heading" in d && d.heading === "Add-ons");
+    this.flowDefinition = addons && "items" in addons ? addons.items?.[0] ?? null : null;
+    return definitions;
+  }
+
+  /** Keep a visible action button intact, so live status changes retain keyboard focus. */
+  refreshAddons(): void {
+    for (const [el, paint] of this.flowRows) {
+      if (el.isConnected) paint();
+      else this.flowRows.delete(el);
+    }
+    if (!this.flowRows.size) this.update();
+  }
+
+  override hide(): void {
+    this.flowRows.clear();
+    super.hide();
+  }
+
+  private openPluginPage(id: string): void {
+    const url = id === FLOWS.id ? FLOWS.installUrl : `obsidian://show-plugin?id=${encodeURIComponent(id)}`;
+    try {
+      const win = this.containerEl.ownerDocument.defaultView ?? window;
+      if (typeof win.open !== "function") throw new Error("No link opener");
+      win.open(url);
+    } catch {
+      new Notice(`Mehrpele: open ${url} to install or update the plugin.`);
+    }
+  }
+
+  private openPluginSettings(id: string): boolean {
+    const setting = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): void } }).setting;
+    try {
+      if (typeof setting?.open !== "function" || typeof setting.openTabById !== "function") throw new Error("Settings navigation unavailable");
+      setting.open();
+      setting.openTabById(id);
+      return true;
+    } catch {
+      new Notice(`Mehrpele: open Settings → ${id === FLOWS.id ? FLOWS.name : "Mehrpele"} manually.`);
+      return false;
+    }
+  }
+
+  openFlows(): void {
+    if (!this.openPluginSettings(this.plugin.manifest.id)) return;
+    try {
+      const el = this.flowDefinition && this.getElementForDefinition(this.flowDefinition);
+      if (el) { el.click(); return; }
+    } catch { /* The private search-navigation hook may change across app versions. */ }
+    new Notice("Mehrpele: open add-ons → flows.");
+  }
+
+  private enableAddon(id: string): Promise<void> {
+    const pending = this.enabling.get(id);
+    if (pending) return pending;
+    const result = (async () => {
+      try {
+        const pm = this.pluginManager;
+        if (typeof pm?.enablePluginAndSave !== "function") throw new Error("Plugin manager unavailable");
+        await pm.enablePluginAndSave(id);
+      } catch {
+        new Notice(`Mehrpele: enable ${id === FLOWS.id ? FLOWS.name : id} in Settings → Community plugins.`);
+      } finally {
+        this.enabling.delete(id);
+        this.plugin.refreshAddonHints();
+        this.refreshAddons();
+      }
+    })();
+    this.enabling.set(id, result);
+    // Even a synchronous rejection must clear the entry after it has been stored.
+    void result.then(() => this.enabling.delete(id));
+    return result;
   }
 
   /**
@@ -118,11 +194,14 @@ export class LazySettingTab extends PluginSettingTab {
     this.applyLive(key);
     // A feature toggle or the provider changes page summaries (On/Off, warnings, Reload needed, provider name): rebuild.
     if (this.toggleKeys.has(key) || key === "llm.provider") this.update();
+    // A number field keeps showing what was typed; when the schema rounded or clamped it, rebuild to show the stored value.
+    else if (typeof value === "number" && this.getControlValue(key) !== value) this.update();
     this.refreshDomState();
   }
 
   private applyLive(key: string): void {
     const p = this.plugin;
+    if (key === "core.showAddonHints") return; // saveData already refreshed hints without rebuilding SVG.
     if (key === "core.overrideMermaid") {
       new Notice("Mehrpele: reload the plugin (or restart Obsidian) for the Mermaid change to take effect.", 6000);
       return;

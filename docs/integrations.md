@@ -1,8 +1,9 @@
 # Pele integrations: Breadcrumbs, Datacore, TaskNotes, Advanced URI, Extended Graph
 
 Read-only diagrams generated from other plugins' data. All three are **off by
-default** (Settings → Mehrpele → Integrations) and need a plugin reload
-after toggling, because Obsidian registers code-block processors at load.
+default** (Settings → Mehrpele → Integrations). Toggling takes effect
+without a reload: open notes re-render, and a block whose integration is off
+shows a "Turn on … in Mehrpele settings" notice.
 
 Shared plumbing: partner data → plain spec → Pele source
 (`src/integrations/graph-to-pele.ts`). Every generated node with a note path

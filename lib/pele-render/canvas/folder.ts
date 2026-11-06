@@ -46,8 +46,9 @@ export function applyFolderTokens(spec: FolderSpec, aliasOrSize: string | undefi
   const known = new Map(views.map((v) => [v.toLowerCase(), v]));
   for (const raw of (aliasOrSize ?? "").split("|")) {
     const t = raw.trim().toLowerCase();
+    const view = known.get(t);
     if (t === "recursive" || t === "subfolders") spec.recursive = true;
-    else if (known.has(t)) spec.view = known.get(t)!;
+    else if (view !== undefined) spec.view = view;
   }
   return spec;
 }
@@ -121,7 +122,7 @@ export function folderBaseBlock(spec: FolderSpec, viewTypes?: readonly string[])
 export function parseFolderLabel(label: string): FolderSpec | null {
   const m = /^!\[\[([^[\]\n]+)\]\]$/.exec(label.trim());
   if (!m) return null;
-  const [target, ...rest] = m[1].split("|");
+  const [target = "", ...rest] = m[1].split("|");
   const t = target.trim();
   if (/^view:folder(\?|$)/i.test(t)) {
     const query = t.slice(t.indexOf("?") + 1);

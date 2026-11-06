@@ -22,6 +22,7 @@
  * enabled), else the internal-link form `path#heading` / `path#^block`.
  */
 import { advancedUri } from "../diagram-link";
+import { claimId } from "../pele-id";
 
 // -- Graph IR ---------------------------------------------------------------
 
@@ -127,9 +128,7 @@ export const DEFAULT_MAX_NODES = 200;
 
 // -- id + label helpers -------------------------------------------------------
 
-const RESERVED_IDS = new Set(["end", "graph", "subgraph", "flowchart", "click", "class", "classdef", "style", "linkstyle"]);
-
-/** Deterministic Pele-safe id for a caller key. Mirrors bases-source sanitising. */
+/** Deterministic Pele-safe id for a caller key (also collapses and trims underscores, unlike bases-source). */
 export function sanitiseId(key: string, taken: Set<string>): string {
   let id = key
     .replace(/\.md$/i, "")
@@ -137,16 +136,7 @@ export function sanitiseId(key: string, taken: Set<string>): string {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
   if (!id || /^[0-9]/.test(id)) id = `n_${id || "node"}`;
-  if (RESERVED_IDS.has(id.toLowerCase())) id = `${id}_`;
-  if (!taken.has(id)) {
-    taken.add(id);
-    return id;
-  }
-  let n = 2;
-  while (taken.has(`${id}_${n}`)) n++;
-  const unique = `${id}_${n}`;
-  taken.add(unique);
-  return unique;
+  return claimId(id, taken);
 }
 
 /** Escape a label for a double-quoted Pele label (repair quote-labels rule). */
@@ -439,8 +429,6 @@ export interface MindmapSpec {
 export function mindmapFromTree(spec: MindmapSpec, options: GeneratorOptions = {}): GeneratedSource {
   const maxNodes = clampMax(options.maxNodes);
   const lines: string[] = ["mindmap"];
-  const taken = new Set<string>();
-  const idByKey = new Map<string, string>();
   let count = 0;
   let truncated = false;
   let omittedCount = 0;
@@ -476,9 +464,8 @@ export function mindmapFromTree(spec: MindmapSpec, options: GeneratorOptions = {
     omittedCount = total - count;
     lines.push(`    [${escapeQuotedLabel(`…${omittedCount} more`)}]`);
   }
-  void taken;
-  void idByKey;
-  return { source: lines.join("\n"), nodeCount: count, edgeCount: 0, truncated, omittedCount, idByKey };
+  // Mindmap nodes carry no ids, so there is nothing to map a caller key to.
+  return { source: lines.join("\n"), nodeCount: count, edgeCount: 0, truncated, omittedCount, idByKey: new Map() };
 }
 
 // -- Kanban ---------------------------------------------------------------------

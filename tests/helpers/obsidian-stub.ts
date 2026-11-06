@@ -105,15 +105,24 @@ export class Plugin extends Component {
     return (globalThis as { __peleData?: unknown }).__peleData ?? null;
   }
   async saveData(): Promise<void> {}
-  // As Obsidian: addCommand rewrites cmd.id to "<plugin id>:<id>", and
-  // removeCommand takes the unprefixed id and adds the prefix itself.
+  /** Every command removal (prefixed id), in order. */
+  removed: string[] = [];
+  // As Obsidian: addCommand rewrites cmd.id to "<plugin id>:<id>" and registers
+  // the command's removal on `this`; removeCommand takes the unprefixed id and
+  // adds the prefix itself.
   addCommand(cmd: { id: string }): unknown {
     cmd.id = `${this.manifest.id}:${cmd.id}`;
     this.commands.set(cmd.id, cmd);
+    const id = cmd.id;
+    this.register(() => this.dropCommand(id));
     return cmd;
   }
   removeCommand(id: string): void {
-    this.commands.delete(`${this.manifest.id}:${id}`);
+    this.dropCommand(`${this.manifest.id}:${id}`);
+  }
+  private dropCommand(id: string): void {
+    this.removed.push(id);
+    this.commands.delete(id);
   }
   registerView(type: string): void {
     this.calls.push(["registerView", type]);
@@ -197,8 +206,20 @@ export class SecretComponent {
   }
 }
 
+/** Keeps its parent and registrations, as Obsidian's (tests call `keys[i].func`). */
+export class Scope {
+  keys: { modifiers: string[] | null; key: string | null; func: (evt: unknown, ctx: unknown) => unknown }[] = [];
+  constructor(public parent?: Scope) {}
+  register(modifiers: string[] | null, key: string | null, func: (evt: unknown, ctx: unknown) => unknown) {
+    const h = { modifiers, key, func };
+    this.keys.push(h);
+    return h;
+  }
+}
+
 const known: Record<string, unknown> = {
   SecretComponent,
+  Scope,
   Component,
   Plugin,
   PluginSettingTab,
@@ -213,11 +234,17 @@ const known: Record<string, unknown> = {
   requireApiVersion: (v: string) => apiGate.ok(v),
   // Records the icon on elements that take attributes (tests read `data-icon`).
   setIcon: (el: { setAttribute?(k: string, v: string): void } | null | undefined, icon: string) => el?.setAttribute?.("data-icon", icon),
-  setTooltip: () => undefined,
+  // As Obsidian: the tooltip is the element's aria-label.
+  setTooltip: (el: { setAttribute?(k: string, v: string): void } | null | undefined, tip: string) => el?.setAttribute?.("aria-label", tip),
 };
 // Named ESM imports need own keys up front (the Proxy below only fills on read).
-for (const k of ["App", "BasesView", "Modal", "Setting", "SuggestModal", "MarkdownView", "TAbstractFile", "TFile", "TFolder"]) known[k] = stubClass();
-for (const k of ["getFrontMatterInfo", "parseYaml"]) known[k] = () => deep();
+for (const k of ["App", "BasesView", "ItemView", "Modal", "Setting", "SuggestModal", "MarkdownView", "TAbstractFile", "TFile", "TFolder"]) known[k] = stubClass();
+for (const k of [
+  "getFrontMatterInfo", "parseYaml", "finishRenderMath", "loadMathJax", "renderMath",
+  "getAllTags", "getIcon", "normalizePath", "requestUrl", "resolveSubpath",
+]) known[k] = () => deep();
+// A CodeMirror state field: an opaque token (fake editor states answer `field()` themselves).
+known.editorLivePreviewField = {};
 
 /** The `obsidian` module: known members above; any other is a stub class (callable, extendable). */
 export const obsidianStub: Record<string, unknown> = new Proxy(known, {

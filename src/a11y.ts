@@ -34,12 +34,17 @@ export function asButton<T extends HTMLElement>(el: T, activate?: (e: KeyboardEv
       activate(e);
       return;
     }
-    const { ctrlKey, metaKey, altKey, shiftKey } = e;
-    // The element's own window, so a popout's handlers see their realm's MouseEvent.
-    const View = el.ownerDocument.defaultView?.MouseEvent ?? MouseEvent;
-    el.dispatchEvent(new View("click", { bubbles: true, cancelable: true, ctrlKey, metaKey, altKey, shiftKey }));
+    clickWithKeys(el, e);
   });
   return el;
+}
+
+/** Dispatch a click on `el` that carries the key event's modifiers (Mod-click variants run as for the mouse). */
+export function clickWithKeys(el: HTMLElement, e: Pick<KeyboardEvent, "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): void {
+  const { ctrlKey, metaKey, altKey, shiftKey } = e;
+  // The element's own window, so a popout's handlers see their realm's MouseEvent.
+  const View = el.ownerDocument.defaultView?.MouseEvent ?? MouseEvent;
+  el.dispatchEvent(new View("click", { bubbles: true, cancelable: true, ctrlKey, metaKey, altKey, shiftKey }));
 }
 
 /** What can take focus by Tab (the browser's list, minus disabled and tabindex=-1). */

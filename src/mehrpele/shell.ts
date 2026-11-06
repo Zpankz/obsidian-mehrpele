@@ -31,7 +31,7 @@ import { extractAccTitle } from "../render-policy";
 import {
   toMountOptions
 } from "../settings";
-import { buildActionBar } from "../action-bar";
+import { type ActionBarKeys, buildActionBar } from "../action-bar";
 import type { FrameCompanion, FrameSurface } from "../api/frame-handles";
 import type PeleMermaidPlugin from "../../main";
 
@@ -105,6 +105,7 @@ export class MehrpeleShell {
   private wrenchBtn!: HTMLElement;
   /** The `.embed-actions` bar (the same element when float-actions moves it to the body). */
   actionBar!: HTMLElement;
+  private barKeys!: ActionBarKeys;
   private surface: FrameSurface | null | undefined;
   /** Diagram type of the last render (the first lands before `mounted` is set). */
   private renderedType: string | null = null;
@@ -138,6 +139,8 @@ export class MehrpeleShell {
   private persisting = false;
   /** pele-edit: disposer of the edit toolbar layer. */
   private disposeEdit: (() => void) | null = null;
+  /** Edit was on at the last settings read: turning it off detaches the edit tools. */
+  private editWasOn = false;
 
   constructor(plugin: PeleMermaidPlugin, component: Component, opts: MehrpeleShellOpts) {
     this.plugin = plugin;
@@ -186,13 +189,17 @@ export class MehrpeleShell {
         persist: (next) => void this.persistSource(next),
       });
     }
-    const { bar, wrench } = buildActionBar({
-      zoom: () => this.plugin.openMehrpeleLightbox(this),
-      revealCode: () => this.revealCode(),
-      source: () => this.source,
-      svg: () => this.flattenedSvg(),
-      repair: () => void this.plugin.repairShell(this),
-    });
+    const { bar, wrench, keys } = buildActionBar(
+      {
+        zoom: () => this.plugin.openMehrpeleLightbox(this),
+        revealCode: () => this.revealCode(),
+        source: () => this.source,
+        svg: () => this.flattenedSvg(),
+        repair: () => void this.plugin.repairShell(this),
+      },
+      this.plugin.app,
+    );
+    this.barKeys = keys;
     wrench.classList.add(HIDDEN_CLASS);
     this.wrenchBtn = wrench;
     this.actionBar = bar;
@@ -202,6 +209,53 @@ export class MehrpeleShell {
     // Capture: Pele's SVG anchors are handled before the overlay's listener.
     this.mountEl.addEventListener("click", this.onSvgLinkClick, true);
     // pele-edit: toolbar + inline editor; edits go through persistSource.
+    // With edit on it attaches now; otherwise on the first pointerover or focusin.
+    this.editWasOn = this.editOn();
+    if (this.editWasOn) this.attachEditNow();
+    else this.armEdit();
+    this.applyWidthStyle();
+  }
+
+  /** Toolbar or inline editing is on. */
+  private editOn(): boolean {
+    const f = this.plugin.settings.features;
+    return f.toolbar.enabled || f["inline-edit"].enabled;
+  }
+
+  private armEdit(): void {
+    this.root.addEventListener("pointerover", this.onFirstHover, true);
+    this.root.addEventListener("focusin", this.onFirstHover, true);
+  }
+
+  private unhookEdit(): void {
+    this.root.removeEventListener("pointerover", this.onFirstHover, true);
+    this.root.removeEventListener("focusin", this.onFirstHover, true);
+  }
+
+  /** Capture, so the edit tools see this pointer's next events and the actions' tooltips carry their hints. */
+  private onFirstHover = (): void => {
+    this.unhookEdit();
+    this.attachEditNow();
+  };
+
+  /**
+   * Settings changed: edit just turned on attaches now; just turned off
+   * detaches (untags the actions, drops the listeners) until the next hover.
+   */
+  syncEdit(): void {
+    const on = this.editOn();
+    if (on) this.attachEditNow();
+    else if (this.editWasOn && this.disposeEdit && !this.destroyed) {
+      this.disposeEdit();
+      this.disposeEdit = null;
+      this.armEdit();
+    }
+    this.editWasOn = on;
+  }
+
+  private attachEditNow(): void {
+    if (this.disposeEdit || this.destroyed) return;
+    this.unhookEdit();
     this.disposeEdit = this.plugin.attachEdit({
       root: this.root,
       wrapper: this.wrapper,
@@ -215,7 +269,6 @@ export class MehrpeleShell {
         !!this.opts.onSourceChange || (!!this.opts.onApplyRepaired && !isReadOnlyFrameRoot(this.root) && !this.root.closest(".canvas-node")),
       persist: (next, what) => this.persistSource(next, what),
     });
-    this.applyWidthStyle();
   }
 
   private onSvgLinkClick = (ev: MouseEvent): void => {
@@ -251,6 +304,7 @@ export class MehrpeleShell {
     this.nodeHandles = null;
     this.disposeEdit?.(); // pele-edit
     this.disposeEdit = null;
+    this.unhookEdit();
     this.plugin.unregisterMehr(this);
     try {
       this.mounted?.destroy();
@@ -264,6 +318,7 @@ export class MehrpeleShell {
       this.labels.unload();
     }
     this.root.removeEventListener("contextmenu", this.onContextMenu);
+    this.barKeys.dispose();
     this.mountEl.removeEventListener("mouseover", this.onOverlayHover);
     this.mountEl.removeEventListener("click", this.onSvgLinkClick, true);
   }

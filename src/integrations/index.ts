@@ -1,10 +1,7 @@
-/** Integrations public surface. main.ts wires this in. */
-import type { MarkdownPostProcessorContext } from "obsidian";
-import { makeBreadcrumbsHandler } from "./breadcrumbs/index";
-import { makeDatacoreHandler, publishPeleMermaid } from "./datacore/index";
-import type { IntegrationHost } from "./host";
-import { makeTasksHandler } from "./tasknotes/index";
-
+/**
+ * Integrations public surface. The plugin registers the code blocks in
+ * src/features/integration-blocks.ts.
+ */
 export {
   flowchartFromGraph,
   ganttFromSpec,
@@ -74,38 +71,3 @@ export {
   DEFAULT_STATUS_MAPPING,
   type TaskStatusMapping,
 } from "./tasknotes/map";
-
-export type CodeBlockHandler = (
-  source: string,
-  el: HTMLElement,
-  ctx: MarkdownPostProcessorContext,
-) => void;
-
-export interface IntegrationRegistration {
-  /** Unregister window.peleMermaid (call from onunload). */
-  unregisterPeleMermaid: () => void;
-}
-
-/**
- * Register all integration code-block processors on the host plugin.
- * Only registers blocks whose integration is enabled at load time
- * (Obsidian cannot unregister a single processor; see README).
- */
-export function registerIntegrations(
-  host: IntegrationHost,
-  register: (lang: string, handler: CodeBlockHandler) => void,
-): IntegrationRegistration {
-  const settings = host.settings();
-  let unregisterPeleMermaid = (): void => undefined;
-  if (settings.datacore.enabled) {
-    unregisterPeleMermaid = publishPeleMermaid(host);
-    register("pele-datacore", makeDatacoreHandler(host));
-  }
-  if (settings.breadcrumbs.enabled) {
-    register("pele-breadcrumbs", makeBreadcrumbsHandler(host));
-  }
-  if (settings.tasknotes.enabled) {
-    register("pele-tasks", makeTasksHandler(host));
-  }
-  return { unregisterPeleMermaid };
-}

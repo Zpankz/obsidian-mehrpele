@@ -2,6 +2,22 @@
 import { describe, expect, test } from "bun:test";
 import { companionReady, companionStatus, COMPANIONS, detectCompanion, MIN_EXCALIDRAW_VERSION, missingCompanion, versionAtLeast } from "../src/features/companions";
 import { MIN_EXCALIDRAW_VERSION as EA_MIN } from "../src/excalidraw/ea";
+import { detectFlows, FLOWS } from "../src/features/companions";
+
+test("Flows requires a live compatible registration, with disabled state taking precedence", () => {
+  const pm = { manifests: {} as Record<string, { version: string }>, enabledPlugins: new Set<string>() };
+  const registered = { version: "0.1.0", requiredHostMinor: 1 };
+  expect(detectFlows(pm, 1, registered).kind).toBe("missing");
+  pm.manifests[FLOWS.id] = { version: "0.1.0" };
+  expect(detectFlows(pm, 1, registered).kind).toBe("disabled");
+  pm.enabledPlugins.add(FLOWS.id);
+  expect(detectFlows(pm, 1, registered).kind).toBe("ready");
+  expect(detectFlows(pm, 1, { ...registered, requiredHostMinor: 2 }).detail).toContain("API 1.2");
+  expect(detectFlows(pm, 0, registered).kind).toBe("update-needed");
+  expect(detectFlows(pm, 1).detail).toContain("has not connected");
+  pm.enabledPlugins.delete(FLOWS.id);
+  expect(detectFlows(pm, 0, registered).kind).toBe("disabled");
+});
 
 describe("companions", () => {
   test("the Excalidraw minimum matches the converter's own", () => {

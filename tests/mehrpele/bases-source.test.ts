@@ -71,6 +71,13 @@ describe("Bases → source generation", () => {
     expect(sanitiseNodeId("9x.md", taken)).toBe("n_9x");
   });
 
+  test("a note named like a Mermaid keyword gets a safe id", () => {
+    const taken = new Set<string>();
+    expect(sanitiseNodeId("end.md", taken)).toBe("end_");
+    expect(sanitiseNodeId("Graph.md", taken)).toBe("Graph_");
+    expect(sanitiseNodeId("x/end.md", taken)).toBe("x_end");
+  });
+
   test("linkpaths without .md resolve by basename/suffix", () => {
     const r = generateBasesSource([
       { path: "A.md", basename: "A", links: ["B"], group: null },

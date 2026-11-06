@@ -5,6 +5,7 @@
  * directive is rebuilt with the ids the diagram has after conversion. Pure;
  * the entry grammar itself belongs to pele-mermaid (src/mehrpele/views).
  */
+import { pushTo } from "./util.js";
 
 const LINE_RE = /^[ \t]*%%[ \t]*pele-view\b(.*?)%%[ \t]*$/gm;
 
@@ -46,7 +47,7 @@ export function parseViewEntries(source: string): Map<string, string[]> {
       const spec = eq > 0 ? entry.slice(eq + 1).trim() : "";
       // Same node-id rule as pele-mermaid's directive parser.
       if (!node || !spec || !/^[^\s=;]+$/.test(node)) continue;
-      (out.get(node) ?? out.set(node, []).get(node)!).push(spec);
+      pushTo(out, node, spec);
     }
   }
   return out;

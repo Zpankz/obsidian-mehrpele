@@ -11,7 +11,7 @@
  * the action bar takes modified clicks before the buttons' plain handlers.
  * Icons and tooltips follow held keys through mod-icons.
  */
-import { Notice, Platform, setTooltip, type App } from "obsidian";
+import { Notice, Platform, setIcon, setTooltip, type App } from "obsidian";
 import { editSourceIn, frameLine, openDiagramView, type Pane } from "../diagram-view";
 import { modAction, modState, tipWithHints, variantId } from "./mod-actions";
 
@@ -38,10 +38,14 @@ export function attachFrameActions(host: FrameActionsHost, frame: FrameActionsTa
   const code = bar?.querySelector<HTMLElement>(":scope > .edit-block-button");
   if (!bar || (!zoom && !code)) return () => undefined;
   const isMac = Platform.isMacOS;
+  /** Each tagged button's plain tooltip, put back on detach. */
+  const plain: [HTMLElement, string, string][] = [];
   const tag = (el: HTMLElement | null | undefined, cls: string, fallback: string) => {
     if (!el) return;
+    const tip = el.getAttribute("aria-label") || fallback;
+    plain.push([el, cls.slice(1), tip]);
     el.addClass(cls.slice(1));
-    setTooltip(el, tipWithHints(el.getAttribute("aria-label") || fallback, modAction(cls), isMac));
+    setTooltip(el, tipWithHints(tip, modAction(cls), isMac));
   };
   tag(zoom, ZOOM, "Zoom in");
   tag(code, CODE, "Edit block");
@@ -60,7 +64,18 @@ export function attachFrameActions(host: FrameActionsHost, frame: FrameActionsTa
     });
   };
   bar.addEventListener("click", onClick, true);
-  return () => bar.removeEventListener("click", onClick, true);
+  return () => {
+    bar.removeEventListener("click", onClick, true);
+    for (const [el, cls, tip] of plain) {
+      if (el.dataset.peleIcon) setIcon(el, modAction(`.${cls}`).base);
+      delete el.dataset.peleIcon;
+      el.removeClass("pele-mod-swap");
+      el.removeClass(cls);
+      // mod-icons remembers the hinted tooltip as the base to return to.
+      delete el.dataset.peleBaseTip;
+      setTooltip(el, tip);
+    }
+  };
 }
 
 async function run(host: FrameActionsHost, frame: FrameActionsTarget, isZoom: boolean, id: string): Promise<void> {

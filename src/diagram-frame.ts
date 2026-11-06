@@ -1,4 +1,4 @@
-import { finishRenderMath, loadMathJax, Notice, Platform, renderMath } from "obsidian";
+import { type App, finishRenderMath, loadMathJax, Notice, Platform, renderMath } from "obsidian";
 import { mount, render, type Mounted, type RenderResult } from "pele-render/pele";
 import { effectiveZoom, MAX_BOX_HEIGHT, MIN_BOX_HEIGHT, resolveFrameDrag, sameFrameSize, type FrameSize, type FrameStart } from "./frame-resize";
 import { isGenuineHandleClick, isGenuineHandlePress, trackHandleDrag } from "./drag-move";
@@ -8,7 +8,7 @@ import { makeIconResolver } from "./icons";
 import { nextIdPrefix } from "./id-prefix";
 import { NodeHandleLayer } from "./node-handles";
 import { fillSvgLabels } from "./node-fill";
-import { buildActionBar } from "./action-bar";
+import { type ActionBarKeys, buildActionBar } from "./action-bar";
 import { sourceDiagramType } from "./diagram-type";
 import { markExternalLinks, PELE_HOST_CLASS, zoomOption } from "./core-look";
 import { createDiagramMath, type DiagramMath, type MathJaxDeps } from "./math-resolver";
@@ -45,6 +45,7 @@ import {
 const HIDDEN_CLASS = "pele-hidden";
 
 export interface FrameHost {
+  app: App;
   settings(): SettingsV3;
   /** Undo for a Reading-view "saved" notice: the latest recorded edit of the note (Mod+Z's stack). */
   undoLatest?(sourcePath: string): (() => void) | null;
@@ -158,6 +159,7 @@ export class DiagramFrame {
   private wrenchBtn!: HTMLElement;
   /** The `.embed-actions` bar (the same element when float-actions moves it to the body). */
   actionBar!: HTMLElement;
+  private barKeys!: ActionBarKeys;
   private surface: FrameSurface | null | undefined;
   private errorRepairBtn!: HTMLButtonElement;
   private repairBusy = false;
@@ -182,6 +184,8 @@ export class DiagramFrame {
   private disposeEdit: (() => void) | null = null;
   /** Hover chrome (node handles; edit tools when edit is off) not built yet: built on the first pointerover or focusin. */
   private chromePending = false;
+  /** Edit (toolbar or inline editing) was on at the last settings read: turning it off detaches the edit tools. */
+  private editWasOn = false;
   /** `$…$` labels typeset by Obsidian's MathJax (core 1.15's resolver); per frame so its cache follows this diagram. */
   private readonly diagramMath: DiagramMath = createDiagramMath({
     deps: obsidianMathDeps(),
@@ -236,14 +240,18 @@ export class DiagramFrame {
       this.attachResize(corner);
     }
 
-    const { bar, wrench } = buildActionBar({
-      zoom: () => this.host.openLightbox(this),
-      revealCode: () => this.opts.onRevealCode(this),
-      source: () => this.source,
-      svg: () => this.flattenedSvg(),
-      repair: () => this.host.repair(this),
-    });
+    const { bar, wrench, keys } = buildActionBar(
+      {
+        zoom: () => this.host.openLightbox(this),
+        revealCode: () => this.opts.onRevealCode(this),
+        source: () => this.source,
+        svg: () => this.flattenedSvg(),
+        repair: () => this.host.repair(this),
+      },
+      host.app,
+    );
     this.actionBar = bar;
+    this.barKeys = keys;
     this.wrenchBtn = wrench;
     this.root.appendChild(bar);
 
@@ -256,10 +264,9 @@ export class DiagramFrame {
     // tools while edit is off, only act under the pointer or keyboard focus:
     // they are built on the first pointerover or focusin, so read-only and
     // unvisited diagrams carry no observers.
-    if (this.editOn()) this.attachEditNow();
-    this.chromePending = true;
-    this.root.addEventListener("pointerover", this.onFirstHover, true);
-    this.root.addEventListener("focusin", this.onFirstHover, true);
+    this.editWasOn = this.editOn();
+    if (this.editWasOn) this.attachEditNow();
+    this.armChrome();
     this.applyWidthStyle();
     this.applyA11y();
     this.setRepairVisible(false);
@@ -291,6 +298,12 @@ export class DiagramFrame {
       applied: (next, id) => this.appliedNodeBox(next, id),
     });
     return this.nodeHandles;
+  }
+
+  private armChrome(): void {
+    this.chromePending = true;
+    this.root.addEventListener("pointerover", this.onFirstHover, true);
+    this.root.addEventListener("focusin", this.onFirstHover, true);
   }
 
   private unhookChrome(): void {
@@ -560,6 +573,8 @@ export class DiagramFrame {
     this.host.unregisterFrame(this);
     this.watcher?.disconnect();
     this.watcher = null;
+    // The DOM may leave with focus in the bar (no focusout then).
+    this.barKeys.release();
     this.reviveObs = new ResizeObserver(() => {
       if (this.destroyed || !this.root.isConnected || !(this.root.clientWidth > 0)) return;
       this.reviveObs?.disconnect();
@@ -606,6 +621,7 @@ export class DiagramFrame {
     this.wrapper.removeEventListener("click", this.onWrapperClick);
     this.wrapper.removeEventListener("mouseover", this.onWrapperHover);
     this.root.removeEventListener("contextmenu", this.onContextMenu);
+    this.barKeys.dispose();
   }
 
   refresh(): void {
@@ -629,8 +645,17 @@ export class DiagramFrame {
   applySettings(): void {
     // Repair turned on or off: show or hide its buttons on an error frame.
     this.setRepairVisible(!this.errorEl.classList.contains(HIDDEN_CLASS));
-    // Edit just turned on: attach now (see the constructor).
-    if (this.editOn()) this.attachEditNow();
+    // Edit just turned on: attach now (see the constructor). Just turned off:
+    // detach (untags the actions, drops the listeners) and wait for the next
+    // hover or focus, as a frame that was never visited does.
+    const editOn = this.editOn();
+    if (editOn) this.attachEditNow();
+    else if (this.editWasOn && this.disposeEdit && !this.destroyed) {
+      this.disposeEdit();
+      this.disposeEdit = null;
+      this.armChrome();
+    }
+    this.editWasOn = editOn;
     // Not mounted yet: load() or the first width the watcher sees mounts it
     // (reflow just turned off while waiting for a width: mount now).
     if (!this.mounted) {

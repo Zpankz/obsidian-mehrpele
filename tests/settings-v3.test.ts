@@ -265,6 +265,12 @@ describe("v2 → v3: jevBinConfirmed", () => {
 });
 
 describe("fresh install", () => {
+  test("add-on hints default on through migration and preserve explicit false", () => {
+    expect(migrate({ settingsVersion: 2 }).settings.core.showAddonHints).toBe(true);
+    expect(migrate({ settingsVersion: 3, core: {}, features: {} }).settings.core.showAddonHints).toBe(true);
+    expect(migrate({ settingsVersion: 3, core: { showAddonHints: false }, features: {} }).settings.core.showAddonHints).toBe(false);
+    expect(migrate({ settingsVersion: 3, core: { showAddonHints: "false" }, features: {} }).settings.core.showAddonHints).toBe(true);
+  });
   test("null → defaults, saved", () => {
     const r = migrate(null);
     expect(r).toEqual({ settings: defaultSettingsV3(), changed: true, from: "fresh" });
@@ -334,6 +340,24 @@ describe("round trips", () => {
     expect(normalizeV3(clone(s)).features.canvas.portalDepth).toBe(0);
     expect(migrate(v2("canvas.portalDepth", 0)).settings.features.canvas.portalDepth).toBe(0);
     expect(normalizeV3(set(clone(defaultSettingsV3()) as unknown as Obj, "features.canvas.portalDepth", 9)).features.canvas.portalDepth).toBe(5);
+  });
+
+  test("fractional depths round to the nearest level, then clamp", () => {
+    const depth = (key: string, v: unknown) => {
+      const s = normalizeV3(set(clone(defaultSettingsV3()) as unknown as Obj, key, v));
+      return key.endsWith("maxDepth") ? s.features.nested.maxDepth : s.features.canvas.portalDepth;
+    };
+    const cases: [string, unknown, number][] = [
+      ["features.nested.maxDepth", 2.5, 3],
+      ["features.nested.maxDepth", 1.4, 1],
+      ["features.nested.maxDepth", 9.4, 8],
+      ["features.nested.maxDepth", -1, 0],
+      ["features.nested.maxDepth", "x", 3],
+      ["features.canvas.portalDepth", 2.5, 3],
+      ["features.canvas.portalDepth", 5.6, 5],
+      ["features.canvas.portalDepth", -0.4, 0],
+    ];
+    for (const [key, v, want] of cases) expect({ key, v, got: depth(key, v) }).toEqual({ key, v, got: want });
   });
 });
 

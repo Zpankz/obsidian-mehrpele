@@ -194,6 +194,31 @@ tiers send the diagram source to the configured service and are off by default.
   edits made in Reading view (see *Undo and redo*).
 - **Remove stale node sizes in this note** — drops `%% pele-size %%` entries
   for nodes that no longer exist, in one undoable edit.
+- **Focus diagram actions** — in Live Preview, focuses the action bar of the
+  diagram nearest the cursor (see *Keyboard*).
+- **Show attached views** — opens the attached-views panel of the hovered
+  node, else of the first node with views in the diagram that holds focus;
+  run again for the next node (see *Keyboard*).
+
+None of these has a default hotkey; bind one in Settings → Hotkeys.
+
+## Keyboard
+
+- Each diagram's action bar (zoom, code, copy, repair, and companion actions)
+  is a row of buttons: Tab and Shift+Tab move between them, Enter or Space
+  runs one. Mod, Mod+Alt and Mod+Alt+Shift with Enter or Space run the
+  button's Mod-click variants (zoom: the diagram in a new tab, to the right or
+  in a new window; code: as a canvas, or the source to the right or in a new
+  window), even where a hotkey uses Mod+Enter.
+- In Reading view, Tab reaches the action bars in page order.
+- In Live Preview, Tab stays with the editor (it indents), so run **Focus
+  diagram actions** to move into the bar of the diagram nearest the cursor:
+  the one the cursor's line is in, else the next one below, else the closest
+  one above. Escape on an action goes back to the editor, cursor unchanged.
+- **Show attached views** reaches a node's attached views (`%% pele-view %%`)
+  from the keyboard: with focus in a diagram's action bar it opens the first
+  node's panel and moves focus to its tabs; each further run moves to the next
+  node. Escape closes the panel and focus goes back to where it was.
 
 ## Theming
 

@@ -1,6 +1,6 @@
 import {
   Component, ItemView,
-  Keymap, MarkdownView, Notice, Plugin, requireApiVersion, setIcon,
+  Keymap, MarkdownRenderChild, MarkdownView, Notice, Plugin, requireApiVersion, setIcon,
   setTooltip, TFile, type MarkdownPostProcessorContext,
   type WorkspaceLeaf
 } from "obsidian";
@@ -11,6 +11,7 @@ import { closeContextMenu } from "./src/context-menu";
 import { DiagramFrame, obsidianMathDeps } from "./src/diagram-frame";
 import { createDiagramMath, type DiagramMath } from "./src/math-resolver";
 import { LiveRegistry } from "./src/live-registry";
+import { sharedChild } from "./src/shared-child";
 import { hasCorePele } from "./src/core-pele";
 import { pruneNoteSizes } from "./src/node-size";
 import { DiagramUndo } from "./src/diagram-undo";
@@ -49,7 +50,8 @@ import type { EditableFrame } from "./src/edit"; // pele-edit
 import { DIAGRAM_VIEW, DiagramView } from "./src/diagram-view"; // pele-edit: zoom Mod-click
 import { registerBeforeCore } from "./src/processor-order";
 import { showMehrpeleMenu, showFrameMenu } from "./src/frame-menus";
-import { buildLpWidgetDOM, applyLpFenceWidths, handleLpWidgetReuse, ensureChildBlockId, copyDiagramLink } from "./src/lp/widget";
+import { buildLpWidgetDOM, applyLpFenceWidths, handleLpWidgetReuse, refreshLpFenceModes, ensureChildBlockId, copyDiagramLink } from "./src/lp/widget";
+import { focusDiagramActions } from "./src/lp/focus-actions";
 import { dispatchBlockReplace, frameHostOf } from "./src/frame-host";
 import type { CanvasViewApi, MehrpeleShell } from "./src/mehrpele/shell";
 import { mehrpeleNesting } from "./src/mehrpele-dom";
@@ -63,6 +65,8 @@ import { registerIntegrationBlocks } from "./src/features/integration-blocks";
 import { isEnabled } from "./src/features/enabled";
 import * as lazy from "./src/features/lazy";
 import { LazySettingTab } from "./src/features/settings-tab";
+import { AddonHints } from "./src/api/hints";
+import { detectFlows, FLOWS, type FlowStatus, type PluginManagerLike } from "./src/features/companions";
 // endregion features
 import { type RefreshMode, rebuildQueue, refreshLeaves } from "./src/refresh-leaves";
 import { RefreshCoalescer, SuspendedFrames } from "./src/frame-lifecycle";
@@ -72,6 +76,7 @@ import { HandleRegistry, type FenceLocation, type FrameCompanion } from "./src/a
 import { CompanionActions } from "./src/api/frame-actions";
 import { CompanionMenus } from "./src/api/menu-items";
 import { createHostApi, type CanvasConverters, type HostApi } from "./src/api/host-api";
+import { mountPeleSource } from "./src/api/pele-source";
 import type { FrameProvenance, MehrpeleApiV1 } from "mehrpele-api";
 
 export default class PeleMermaidPlugin extends Plugin {
@@ -87,6 +92,8 @@ export default class PeleMermaidPlugin extends Plugin {
   /** Open Mehrpele Bases views: the Bases toggle refreshes them. */
   private basesViews = new LiveRegistry<MehrpeleDiagramView>();
   mehrByDom = new WeakMap<HTMLElement, MehrpeleShell>();
+  /** Live Preview canvas embeds by widget container DOM, with the body and rest they were built from. */
+  canvasEmbedsByDom = new WeakMap<HTMLElement, { code: string; rest: string; destroy(): void }>();
   /** Live Preview frames whose widget left the document: destroyed unless revived within a second. */
   readonly suspended = new SuspendedFrames<DiagramFrame>();
   /** css-change bursts: one refresh per shown frame per frame tick; hidden frames refresh when shown. */
@@ -109,6 +116,8 @@ export default class PeleMermaidPlugin extends Plugin {
   /** The companion API (MehrpeleApiV1), set in onload once features exist. */
   api: MehrpeleApiV1 | null = null;
   private companionHost: HostApi | null = null;
+  private addonHints: AddonHints | null = null;
+  private addonTab: LazySettingTab | null = null;
   // endregion companion api
   private lp: LpTakeover | null = null;
   /** Whether the `mermaid` override was registered at load (registration is load-time only). */
@@ -122,7 +131,8 @@ export default class PeleMermaidPlugin extends Plugin {
     // v3 on disk and in memory; migrates and saves once (src/settings/load.ts).
     this.settings = (await loadSettings(this, (m) => new Notice(m))).settings;
 
-    this.addSettingTab(new LazySettingTab(this));
+    this.addonTab = new LazySettingTab(this);
+    this.addSettingTab(this.addonTab);
     this.diagramUndo.load();
 
     // Block command/write obsidian:// links in diagrams before anything else sees the click.
@@ -194,6 +204,14 @@ export default class PeleMermaidPlugin extends Plugin {
           lineStart !== undefined
             ? { key: `${ctx.sourcePath}#${lineStart}`, fenceRest, locate: () => readingLocate(ctx, el) }
             : undefined;
+        // A `cannoli` fence whose body is `%% pele-source: [[X.canvas]] %%`: the canvas.
+        const embed = companion && this.canvasEmbed(source, el, ctx.sourcePath, companion);
+        if (embed) {
+          const child = new MarkdownRenderChild(el);
+          child.register(() => embed.destroy());
+          ctx.addChild(child);
+          return;
+        }
         if (this.appliesMehrpele(lang, source)) {
           if (nested.depth > this.settings.features.nested.maxDepth) {
             // Too deep: the plain diagram, labels as fallback text.
@@ -261,16 +279,24 @@ export default class PeleMermaidPlugin extends Plugin {
             shell.destroy();
             this.mehrByDom.delete(el);
           }
+          const embed = this.canvasEmbedsByDom.get(el);
+          if (embed) {
+            embed.destroy();
+            this.canvasEmbedsByDom.delete(el);
+          }
           // CM destroys widgets that scroll out of its viewport, but Obsidian's
           // widget keeps `containerEl` and its toDOM returns that cache without
           // re-running initDOM: scrolled back, the block would show the dead
           // frame (empty, never re-mounted). Drop the cache so it rebuilds.
-          if ((frame || shell) && widget.containerEl === el) widget.containerEl = undefined;
+          if ((frame || shell || embed) && widget.containerEl === el) widget.containerEl = undefined;
         }, 0);
       },
       onWidgetReuse: (widget, dom, view) => handleLpWidgetReuse(this, widget, dom, view),
       onFenceWidthChanges: (view, changes) => applyLpFenceWidths(this, view, changes),
-      onFenceLayoutChange: () => this.frameHandles.resyncSoon(),
+      onFenceLayoutChange: (view) => {
+        this.frameHandles.resyncSoon();
+        window.requestAnimationFrame(() => refreshLpFenceModes(this, view));
+      },
       onFirstPatch: () => {
         // Redraw already-open LP editors that show one of our blocks so they
         // switch to Pele without being reopened (undo history and cursor are
@@ -333,6 +359,11 @@ export default class PeleMermaidPlugin extends Plugin {
       },
     });
     this.addCommand({
+      id: "focus-diagram-actions",
+      name: "Focus diagram actions",
+      editorCheckCallback: (checking, editor) => focusDiagramActions((editor as unknown as { cm?: EditorView }).cm, checking),
+    });
+    this.addCommand({
       id: "validate-mermaid-blocks",
       name: "Validate all Mermaid blocks in note",
       editorCallback: (editor) => {
@@ -361,9 +392,33 @@ export default class PeleMermaidPlugin extends Plugin {
       read: (file) => this.app.vault.read(file),
       mountDiagram: (el, owner, source, path, lang, companion) =>
         this.mountDiagram(el, owner, source, path, lang, undefined, companion),
+      onModify: (file, cb) => {
+        // A child of the plugin, so plugin unload also drops the listener.
+        const watch = this.addChild(new Component());
+        watch.registerEvent(this.app.vault.on("modify", (f) => f.path === file.path && cb(f)));
+        return () => this.removeChild(watch);
+      },
+      schedule: (cb, ms) => {
+        const t = window.setTimeout(cb, ms);
+        return () => window.clearTimeout(t);
+      },
     });
     this.api = this.companionHost.api;
-    this.app.workspace.onLayoutReady(() => this.companionHost?.ready());
+    this.addonHints = new AddonHints({
+      handles: this.frameHandles,
+      enabled: () => this.settings.core.showAddonHints,
+      ready: () => this.flowStatus().kind === "ready",
+      openFlows: () => this.addonTab?.openFlows(),
+    });
+    this.register(this.companionHost.onFeaturesChanged(() => {
+      this.refreshAddonHints();
+      this.addonTab?.refreshAddons();
+    }));
+    this.app.workspace.onLayoutReady(() => {
+      this.companionHost?.ready();
+      this.refreshAddonHints();
+      this.addonTab?.refreshAddons();
+    });
     // endregion companion api
 
     // Take effect in already-open notes without reopening them: Reading views
@@ -395,6 +450,8 @@ export default class PeleMermaidPlugin extends Plugin {
    * children last-added-first before onunload, so this cannot be a child or onunload.
    */
   override unload(): void {
+    this.addonHints?.dispose();
+    this.addonHints = null;
     this.companionHost?.unload();
     super.unload();
   }
@@ -430,7 +487,13 @@ export default class PeleMermaidPlugin extends Plugin {
   override async saveData(data: unknown): Promise<void> {
     await super.saveData(data);
     await this.features?.sync();
+    this.refreshAddonHints();
   }
+  flowStatus(): FlowStatus {
+    const pm = (this.app as unknown as { plugins?: PluginManagerLike }).plugins;
+    return detectFlows(pm, this.api?.apiMinor ?? 0, this.companionHost?.feature(FLOWS.id));
+  }
+  refreshAddonHints(): void { this.addonHints?.refresh(); }
   // endregion features
 
   // -- FrameHost (adapted via frameHostOf) -----------------------------------
@@ -850,18 +913,23 @@ export default class PeleMermaidPlugin extends Plugin {
   /** pele-edit: hover toolbar + inline label editor on one rendered diagram. */
   attachEdit(frame: EditableFrame): () => void {
     const edit = lazy.edit();
-    if (!this.sweepingFloats) {
-      // A floated action bar must not outlive its frame's place (tab moved to another note, popouts).
-      this.sweepingFloats = true;
-      const { sweepFloatingActions } = lazy.floatActions();
-      for (const name of ["active-leaf-change", "layout-change", "file-open", "window-close"] as const) {
-        this.registerEvent(this.app.workspace.on(name as "layout-change", sweepFloatingActions));
-      }
-    }
-    return edit.attachEditing(this, frame);
+    const releaseSweep = this.floatSweep();
+    const detach = edit.attachEditing(this, frame);
+    return () => {
+      detach();
+      releaseSweep();
+    };
   }
-  /** Whether the floating action bar sweep is registered (with the first edit attach). */
-  private sweepingFloats = false;
+  /**
+   * A floated action bar must not outlive its frame's place (tab moved to another note, popouts):
+   * swept on these workspace events while any frame has editing attached, and not after.
+   */
+  private readonly floatSweep = sharedChild(this, (c) => {
+    const { sweepFloatingActions } = lazy.floatActions();
+    for (const name of ["active-leaf-change", "layout-change", "file-open", "window-close"] as const) {
+      c.registerEvent(this.app.workspace.on(name as "layout-change", sweepFloatingActions));
+    }
+  });
 
   /**
    * Mount one block as the Markdown processor would (the diagram view); `fenceLine`
@@ -881,6 +949,20 @@ export default class PeleMermaidPlugin extends Plugin {
         ? new (lazy.mehrpeleShell().MehrpeleChild)(el, this, source, sourcePath, lang, fenceLine, {}, 0, companion)
         : new PeleDiagramChild(el, this, source, sourcePath, lang, fenceLine, {}, false, companion),
     );
+  }
+
+  /**
+   * A canvas embed (`cannoli` fence, `%% pele-source: [[X.canvas]] %%` body) mounted into `el`
+   * through the api's mountCanvas, keyed by the fence; null when the fence is a normal diagram.
+   */
+  canvasEmbed(source: string, el: HTMLElement, sourcePath: string, companion: FrameCompanion): { destroy(): void } | null {
+    const host = this.companionHost;
+    if (!host) return null;
+    const deps = {
+      resolve: (link: string, from: string) => this.app.metadataCache.getFirstLinkpathDest(link, from),
+      mountCanvas: host.mountCanvas,
+    };
+    return mountPeleSource(deps, source, el, sourcePath, companion.fenceRest, companion.key, companion.locate ?? (() => null));
   }
 
   /** pele-edit: node label autocomplete through the Repair LLM provider (undefined = off / unconfigured). */
@@ -1118,6 +1200,7 @@ export default class PeleMermaidPlugin extends Plugin {
   /** Re-apply current settings to every live diagram (zoom/size/font changes). */
   refreshLiveMounts(): void {
     for (const frame of [...this.frames]) frame.applySettings();
+    for (const shell of [...this.mehrShells]) shell.syncEdit();
   }
 
   ensureChildBlockId(sourcePath: string, fenceLine: number, source: string, frameRoot: HTMLElement): Promise<string | null> {

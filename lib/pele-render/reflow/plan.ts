@@ -26,9 +26,10 @@
  * than 64 px. DOM-free: the caller passes a render function.
  */
 import type { RenderOptions } from "pele";
-import { detectType, render as peleRender } from "../pele.js";
+import { render as peleRender } from "../pele.js";
+import { detectTypeOrNull } from "../detect.js";
 import { parseReflowDirective, type ReflowDirective } from "./directive.js";
-import { hasCanvasLayout } from "../canvas/layout-directive.js";
+import { hasCanvasLayout } from "../layout/directive.js";
 import { flipSource, flowchartDirection, hasHorizontalSubgraph, hasWrittenDirection, turnSource, TURNABLE_TYPES } from "./transpose.js";
 
 export interface LayoutSize {
@@ -230,12 +231,7 @@ export class ReflowPlanner {
     this.now = opts.now ?? (() => Date.now());
     const directive = opts.directive ?? parseReflowDirective(source);
     this.floor = directive.floor ?? this.policy.minTextScale;
-    let type: string | null = null;
-    try {
-      type = detectType(source);
-    } catch {
-      type = null;
-    }
+    const type = detectTypeOrNull(source);
     this.type = type;
     const fixed = directive.direction === "fixed";
     const forced = directive.direction === "auto";
@@ -316,10 +312,8 @@ export class ReflowPlanner {
     const size = this.measure(source, options);
     this.sizes.set(step.key, size);
     if (gkey) {
-      if (globalSizes.size >= GLOBAL_CACHE_MAX) {
-        const oldest = globalSizes.keys().next();
-        if (!oldest.done) globalSizes.delete(oldest.value);
-      }
+      const oldest = globalSizes.size >= GLOBAL_CACHE_MAX ? globalSizes.keys().next() : undefined;
+      if (oldest && !oldest.done) globalSizes.delete(oldest.value);
       globalSizes.set(gkey, size);
     }
     return size;
@@ -388,13 +382,16 @@ export class ReflowPlanner {
   private narrowest(): number {
     const n = this.steps.length;
     for (const i of [n - 2, n - 1]) if (i >= 0) this.size(this.steps[i]);
-    let best = -1;
-    for (let i = 0; i < n; i++) {
-      const s = this.sizes.get(this.steps[i].key);
-      if (!s || !(s.width > 0)) continue;
-      if (best < 0 || s.width < this.sizes.get(this.steps[best].key)!.width) best = i;
+    let best = 0;
+    let bestWidth = -1; // -1: nothing measured with a positive width yet
+    for (const [i, step] of this.steps.entries()) {
+      const s = this.sizes.get(step.key);
+      if (s && s.width > 0 && (bestWidth < 0 || s.width < bestWidth)) {
+        best = i;
+        bestWidth = s.width;
+      }
     }
-    return Math.max(0, best);
+    return best;
   }
 
   private planFor(index: number, L: number, spread?: Step): ReflowPlan {

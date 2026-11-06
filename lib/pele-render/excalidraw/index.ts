@@ -1,3 +1,4 @@
+import type { FlowchartModel } from "pele";
 import { parse, render } from "../pele.js";
 import type { ExcalidrawElementSkeleton, ExcalidrawFileEntry, PeleToExcalidrawOptions, PeleToExcalidrawResult } from "./types.js";
 import { extractGeometry, pathToPoints } from "./svg-geometry.js";
@@ -23,9 +24,8 @@ export const DEFAULT_PALETTE: Record<string, string> = {
   "--pele-border": "#8a8a8a", "--pele-accent": "#5b7bd5",
 };
 
+/** A flowchart node as the converter reads it: Pele's node, or one synthesised from SVG geometry. */
 interface FlowNodeLike { id: string; text?: string; type?: string; styles?: string[]; classes?: string[]; link?: string }
-interface FlowEdgeLike { start: string; end: string; type?: string; text?: string; stroke?: string; id?: string; style?: string[] }
-interface FlowSubgraphLike { id: string; nodes?: string[]; title?: string }
 
 const sanitize = (id: string) => id.replace(/[^A-Za-z0-9_-]/g, "_");
 export const nodeSkeletonId = (peleId: string) => `node_${sanitize(peleId)}`;
@@ -75,11 +75,7 @@ function imageFallback(svg: string, width: number, height: number, palette: Reco
 export function peleToExcalidraw(source: string, opts: PeleToExcalidrawOptions = {}): PeleToExcalidrawResult {
   const palette = opts.palette ?? {};
   const scale = opts.scale ?? 1;
-  const model = parse(source) as unknown as {
-    type: string; nodes?: Map<string, FlowNodeLike> | Record<string, FlowNodeLike>;
-    edges?: FlowEdgeLike[]; subgraphs?: FlowSubgraphLike[];
-    classes?: Map<string, { styles?: string[]; textStyles?: string[] }> | Record<string, { styles?: string[]; textStyles?: string[] }>;
-  };
+  const model = parse(source);
   const rendered = render(source);
   const svg = rendered.svg, width = rendered.width, height = rendered.height;
 
@@ -99,12 +95,12 @@ export function peleToExcalidraw(source: string, opts: PeleToExcalidrawOptions =
 }
 
 function flowchartToExcalidraw(
-  model: { nodes?: Map<string, FlowNodeLike> | Record<string, FlowNodeLike>; edges?: FlowEdgeLike[]; subgraphs?: FlowSubgraphLike[]; classes?: Map<string, { styles?: string[] }> | Record<string, { styles?: string[] }> },
+  model: FlowchartModel,
   svg: string, palette: Record<string, string>, scale: number, fontFamily: number | undefined, groups: boolean,
 ): PeleToExcalidrawResult {
   const geo = extractGeometry(svg);
   const dropped: string[] = [];
-  const nodes: FlowNodeLike[] = model.nodes instanceof Map ? [...model.nodes.values()] : Object.values(model.nodes ?? {});
+  const nodes: FlowNodeLike[] = [...model.nodes.values()];
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   // Nodes present in SVG but not in model (defensive): synthesise from geometry
   for (const [id, g] of geo.nodes) if (!nodeById.has(id)) { const n = { id, text: g.label }; nodes.push(n); nodeById.set(id, n); }
@@ -117,7 +113,7 @@ function flowchartToExcalidraw(
   // Excalidraw's CLI `create` rejects label.strokeColor, as it does groupIds: groups:false leaves both out.
   const textColor = (c: string) => (groups ? { strokeColor: c } : {});
 
-  const classDefs = model.classes instanceof Map ? model.classes : new Map(Object.entries(model.classes ?? {}));
+  const classDefs = model.classes;
 
   // ---- normalisation offset
   let minX = Infinity, minY = Infinity;
@@ -146,12 +142,8 @@ function flowchartToExcalidraw(
     // author styles: classDefs + node styles; literal SVG colours win
     // label text: the text colour (as in Pele's SVG), or the author's `color:`; never the border
     let fill = surface, strokeC = border, textC = fg;
-    for (const cls of node.classes ?? []) {
-      const st = styleMap(classDefs.get(cls)?.styles);
-      if (st.get("fill")) fill = st.get("fill")!; if (st.get("stroke")) strokeC = st.get("stroke")!; if (st.get("color")) textC = st.get("color")!;
-    }
-    const own = styleMap(node.styles);
-    if (own.get("fill")) fill = own.get("fill")!; if (own.get("stroke")) strokeC = own.get("stroke")!; if (own.get("color")) textC = own.get("color")!;
+    for (const cls of node.classes ?? []) { const st = styleMap(classDefs.get(cls)?.styles); fill = st.get("fill") || fill; strokeC = st.get("stroke") || strokeC; textC = st.get("color") || textC; }
+    const own = styleMap(node.styles); fill = own.get("fill") || fill; strokeC = own.get("stroke") || strokeC; textC = own.get("color") || textC;
     if (g.fill) fill = g.fill; if (g.stroke) strokeC = g.stroke;
 
     const label = { text: labelText(node.text ?? g.label ?? node.id), fontSize: 16 * scale, ...(fontFamily !== undefined ? { fontFamily } : {}), textAlign: "center" as const, verticalAlign: "middle" as const, ...textColor(textC) };
@@ -183,8 +175,10 @@ function flowchartToExcalidraw(
     const ptsAbs = eg ? pathToPoints(eg.d) : [];
     if (ptsAbs.length < 2) { dropped.push(`edge-missing-geometry:${edgeId}`); continue; }
     let out: Pt[] = ptsAbs.map(([x, y]) => [X(x), Y(y)]);
-    if (grownNodes.has(edge.start) && outlines.has(edge.start)) out = clipStart(out, outlines.get(edge.start)!);
-    if (grownNodes.has(edge.end) && outlines.has(edge.end)) out = clipEnd(out, outlines.get(edge.end)!);
+    const startOutline = grownNodes.has(edge.start) ? outlines.get(edge.start) : undefined;
+    const endOutline = grownNodes.has(edge.end) ? outlines.get(edge.end) : undefined;
+    if (startOutline) out = clipStart(out, startOutline);
+    if (endOutline) out = clipEnd(out, endOutline);
     const [x0, y0] = out[0];
     const points: [number, number][] = out.map(([x, y]) => [x - x0, y - y0]);
     const heads = arrowheads(edge.type, eg?.markers ?? 1);

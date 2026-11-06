@@ -2,12 +2,12 @@
  * Obsidian side of Canvas → Mermaid: the commands, the .canvas file-menu
  * item, the destination modal (new note / insert into a note / copy) and the
  * canvas reading (the open view's live data when there is one, so unsaved
- * moves count). The conversion itself is canvas-convert.ts.
+ * moves count). The conversion itself is convert.ts.
  */
 import { FuzzySuggestModal, MarkdownView, Modal, Notice, Setting, TFile, type App, type Plugin } from "obsidian";
 import type { CanvasData } from "pele-render/canvas";
-import { canvasReferences, canvasToBlock, insertBlock, mermaidNoteBody, mermaidNoteName, type CanvasBlock, type CanvasLayoutMode } from "./canvas-convert";
-import type { SettingsV3 } from "./settings/schema";
+import { canvasReferences, canvasToBlock, insertBlock, mermaidNoteBody, mermaidNoteName, type CanvasBlock, type CanvasLayoutMode } from "./convert";
+import type { SettingsV3 } from "../settings/schema";
 
 export interface CanvasConvertHost extends Plugin {
   settings: SettingsV3;

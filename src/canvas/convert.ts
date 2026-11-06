@@ -2,7 +2,7 @@
  * Canvas → Mermaid in the plugin: one conversion used by the commands, the
  * file menu and the `pele:from-canvas` CLI handler, plus the pure helpers
  * for the two destinations (a new note beside the canvas, or a block
- * inserted into a note). No Obsidian imports (UI: canvas-convert-ui.ts).
+ * inserted into a note). No Obsidian imports (UI: convert-ui.ts).
  */
 import { canvasToMermaid, type CanvasData, type FromCanvasOptions } from "pele-render/canvas";
 

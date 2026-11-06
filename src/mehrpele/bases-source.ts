@@ -5,6 +5,7 @@
  * feed it fakes.
  */
 import { escapeLabelMarkdown, markdownToFallback } from "./model";
+import { claimId } from "../pele-id";
 
 export interface BaseEntryLike {
   /** Vault path of the entry's file. */
@@ -55,15 +56,8 @@ export interface BasesSourceResult {
 export function sanitiseNodeId(path: string, taken: Set<string>): string {
   let id = path.replace(/\.md$/i, "").replace(/[^A-Za-z0-9_]/g, "_");
   if (!id || /^[0-9]/.test(id)) id = `n_${id}`;
-  if (!taken.has(id)) {
-    taken.add(id);
-    return id;
-  }
-  let n = 2;
-  while (taken.has(`${id}_${n}`)) n++;
-  const unique = `${id}_${n}`;
-  taken.add(unique);
-  return unique;
+  // Not underscore-collapsed like graph-to-pele's sanitiseId: existing Bases ids stay as they were.
+  return claimId(id, taken);
 }
 
 function labelFor(entry: BaseEntryLike): string {
@@ -96,7 +90,7 @@ export function generateBasesSource(
   for (const e of kept) idByPath.set(e.path, sanitiseNodeId(e.path, taken));
 
   return options.kind === "mindmap"
-    ? mindmapSource(kept, idByPath, truncated)
+    ? mindmapSource(kept, truncated)
     : flowchartSource(kept, idByPath, options, truncated);
 }
 
@@ -129,8 +123,6 @@ function flowchartSource(
   }
   emitNodes(ungrouped, "  ");
   for (const [group, list] of groups) {
-    const gid = `subgraph:${group}`;
-    void gid;
     lines.push(`  subgraph ${quoted(group)}`);
     emitNodes(list, "    ");
     lines.push("  end");
@@ -178,14 +170,9 @@ function resolveLinkGuess(link: string, kept: BaseEntryLike[]): string {
   return hit?.path ?? clean;
 }
 
-function mindmapSource(
-  kept: BaseEntryLike[],
-  idByPath: Map<string, string>,
-  truncated: boolean,
-): BasesSourceResult {
+function mindmapSource(kept: BaseEntryLike[], truncated: boolean): BasesSourceResult {
   // Parent = first link target that is also an entry; roots attach to a
   // synthetic root so the mindmap stays a single tree.
-  void idByPath;
   const pathSet = new Set(kept.map((e) => e.path));
   const children = new Map<string, BaseEntryLike[]>();
   const roots: BaseEntryLike[] = [];

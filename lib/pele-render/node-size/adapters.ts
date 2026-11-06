@@ -6,6 +6,7 @@
  * block-beta is deliberately absent (one cell's size is its whole column's
  * and row's), as are fixed-geometry types (architecture, gantt, pie, …).
  */
+import type { DiagramModel, MindmapModel, StateModel } from "pele";
 
 export interface LabelRef {
   id: string;
@@ -76,49 +77,20 @@ function mindmapCaps(n: { type?: number; isRoot?: boolean }): SizeCaps | null {
   return FREE;
 }
 
-/**
- * The parts of Pele's parsed models read here (internals, e.g. the state
- * graph, not in Pele's exported model types). Containers are optional: an
- * unexpected shape yields no refs.
- */
-interface FlowNodeLike {
-  id: string;
-  text?: unknown;
-  type?: string;
-  props?: { shape?: string };
-  img?: unknown;
-  icon?: unknown;
-}
-interface StateNodeLike {
-  id: unknown;
-  label?: unknown;
-  isGroup?: unknown;
-  shape?: unknown;
-}
-interface MindmapNodeLike {
-  nodeId: string;
-  descr?: string;
-  type?: number;
-  isRoot?: boolean;
-  children?: (MindmapNodeLike | null | undefined)[];
-}
-interface ValuesOf<T> {
-  values?(): Iterable<T>;
-}
-type ModelLike =
-  | { type: "flowchart"; nodes?: ValuesOf<FlowNodeLike> }
-  | { type: "state"; graph?: { nodes?: StateNodeLike[] } }
-  | { type: "class"; classes?: ValuesOf<{ id: string; label?: string }> }
-  | { type: "er"; entities?: ValuesOf<{ label: string; alias?: string }> }
-  | { type: "sequence"; actors?: ValuesOf<{ name: string; description?: string }> }
-  | { type: "mindmap"; nodes?: (MindmapNodeLike | null | undefined)[] }
-  | { type: "kanban"; sections?: { items?: { id: string; label?: string }[] }[] }
-  | { type: "c4"; shapes?: { alias: string; label?: string }[] };
+type MindmapNode = MindmapModel["nodes"][number];
 
-function mindmapNodes(model: { nodes?: (MindmapNodeLike | null | undefined)[] }): MindmapNodeLike[] {
-  const seen = new Set<MindmapNodeLike>();
-  const out: MindmapNodeLike[] = [];
-  const walk = (n: MindmapNodeLike | null | undefined): void => {
+/**
+ * The state graph Pele builds at parse time (its StateDb carries it; the
+ * public StateModel type does not declare it).
+ */
+interface StateGraphView {
+  graph?: { nodes?: { id: string; shape: string | undefined; label: string | undefined; isGroup: boolean }[] };
+}
+
+function mindmapNodes(model: MindmapModel): MindmapNode[] {
+  const seen = new Set<MindmapNode>();
+  const out: MindmapNode[] = [];
+  const walk = (n: MindmapNode | undefined): void => {
     if (!n || seen.has(n)) return;
     seen.add(n);
     out.push(n);
@@ -134,10 +106,12 @@ export interface SizableNode {
 }
 
 /** Sizable nodes of a parsed model, keyed by the SVG `data-id`. Throws on an unexpected model shape. */
-export function sizableNodes(input: unknown): Map<string, SizableNode> {
-  const model = input as ModelLike | null | undefined;
+export function sizableNodes(parsed: unknown): Map<string, SizableNode> {
   const out = new Map<string, SizableNode>();
-  if (!model || typeof model !== "object") return out;
+  if (!parsed || typeof parsed !== "object") return out;
+  // A Pele parse result; every read below stays defensive (`?.`, `?? []`)
+  // because these are Pele internals that may change shape.
+  const model = parsed as DiagramModel;
   const add = (id: unknown, caps: SizeCaps | null, get: () => string, set: (v: string) => void): void => {
     if (typeof id !== "string" || !id || !caps || out.has(id)) return;
     out.set(id, { ref: { id, get, set }, caps });
@@ -153,7 +127,7 @@ export function sizableNodes(input: unknown): Map<string, SizableNode> {
         break;
       case "state":
         // Pele builds the state graph at parse time: labels live on graph.nodes.
-        for (const n of model.graph?.nodes ?? []) {
+        for (const n of (model as StateModel & StateGraphView).graph?.nodes ?? []) {
           if (n.isGroup || !/^rect|^rounded$/.test(String(n.shape))) continue;
           // The title only: extra description lines keep their own compartment.
           add(n.id, FREE, () => String(n.label ?? n.id), (v) => {
@@ -204,6 +178,9 @@ export function sizableNodes(input: unknown): Map<string, SizableNode> {
             s.label = v;
           });
         }
+        break;
+      default:
+        // Other diagram types have no sizable nodes.
         break;
     }
   } catch (err) {

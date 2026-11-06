@@ -599,7 +599,6 @@ function naturalDiagramSize(host: MehrpeleHost, diagram: NestedDiagram): Mehrpel
   try {
     // Unconstrained: the parent's layout width must not squeeze the child.
     const { maxWidth: _parentWidth, ...opts } = host.renderOptions() as RenderOptions;
-    void _parentWidth;
     const r = peleRender(diagram.code, opts);
     return r.width > 0 && r.height > 0 ? { width: r.width, height: r.height } : null;
   } catch {

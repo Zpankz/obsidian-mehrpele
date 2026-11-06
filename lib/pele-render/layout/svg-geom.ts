@@ -1,3 +1,5 @@
+import { attr, decodeEntitiesAmpFirst, num } from "../svg/read.js";
+
 export interface BBox { x: number; y: number; width: number; height: number; cx: number; cy: number }
 export interface EdgeGeom { sx: number; sy: number; ex: number; ey: number; d: string }
 export interface SvgGeometry {
@@ -7,14 +9,6 @@ export interface SvgGeometry {
   edges: Map<string, EdgeGeom>;
 }
 
-function num(v: string | undefined, d = 0): number { const n = v ? parseFloat(v) : NaN; return Number.isFinite(n) ? n : d; }
-function attr(tag: string, name: string): string | undefined {
-  const m = tag.match(new RegExp(`\\b${name}="([^"]*)"`));
-  return m ? m[1] : undefined;
-}
-function decodeId(s: string): string {
-  return s.replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;/g, "'");
-}
 
 /** Parse path d: return list of absolute points (M/L endpoints, arc endpoints, H/V). */
 export function pathPoints(d: string): { x: number; y: number }[] {
@@ -54,6 +48,9 @@ export function parseSvgGeometry(svg: string): SvgGeometry {
   let m: RegExpExecArray | null;
   const cum = () => stack.reduce((a, f) => ({ x: a.x + f.tx, y: a.y + f.ty }), { x: 0, y: 0 });
 
+  /** Translate of `frame` in SVG coordinates (its ancestors' and its own). */
+  const originOf = (frame: GFrame) => { let x = 0, y = 0; for (const f of stack) { x += f.tx; y += f.ty; if (f === frame) break; } return { x, y }; };
+
   while ((m = tagRe.exec(svg)) !== null) {
     const closing = m[1] === "/";
     const tagName = m[2];
@@ -64,12 +61,11 @@ export function parseSvgGeometry(svg: string): SvgGeometry {
         const frame = stack.pop();
         if (frame) {
           if (frame.nodeId) {
-            const c = cum(); // after pop, cum excludes this frame; recompute centre below
-            // node centre was cumulative including frame: store during open via nodeBBox already absolute?
-            // nodeBBox stored absolute at shape time; if none, fallback
+            // The box of the node's first shape (already absolute); without one, a
+            // default box around the node's translate (the stack now holds its ancestors).
             if (frame.nodeBBox) nodes.set(frame.nodeId, frame.nodeBBox);
             else {
-              // fallback: centre = frame translate + ancestors (stack now ancestors)
+              const c = cum();
               const cx = c.x + frame.tx, cy = c.y + frame.ty;
               nodes.set(frame.nodeId, { x: cx - 40, y: cy - 15, width: 80, height: 30, cx, cy });
             }
@@ -86,74 +82,76 @@ export function parseSvgGeometry(svg: string): SvgGeometry {
       const dataId = attr(tag, "data-id");
       const tr = tag.match(/transform="translate\(([^,]+),([^)]+)\)"/);
       const frame: GFrame = { tx: tr ? num(tr[1]) : 0, ty: tr ? num(tr[2]) : 0 };
-      if (cls.includes("pele-node") && dataId) frame.nodeId = decodeId(dataId);
-      if (cls.includes("pele-cluster") && dataId) frame.clusterId = decodeId(dataId);
-      if (cls.includes("pele-edge") && dataId) frame.edgeId = decodeId(dataId);
+      if (cls.includes("pele-node") && dataId) frame.nodeId = decodeEntitiesAmpFirst(dataId);
+      if (cls.includes("pele-cluster") && dataId) frame.clusterId = decodeEntitiesAmpFirst(dataId);
+      if (cls.includes("pele-edge") && dataId) frame.edgeId = decodeEntitiesAmpFirst(dataId);
       stack.push(frame);
       if (selfClosing) stack.pop();
       continue;
     }
     if (closing) continue;
-    // shape elements
-    // find enclosing node/cluster/edge frame (nearest)
+    // Shape elements: the first shape in a node frame is its box (a stateEnd's
+    // outer circle comes first). Find the nearest enclosing node/cluster/edge frame.
     let nodeFrame: GFrame | undefined, clusterFrame: GFrame | undefined, edgeFrame: GFrame | undefined;
     for (let i = stack.length - 1; i >= 0; i--) {
       if (!nodeFrame && stack[i].nodeId) nodeFrame = stack[i];
       if (!clusterFrame && stack[i].clusterId) clusterFrame = stack[i];
       if (!edgeFrame && stack[i].edgeId) edgeFrame = stack[i];
     }
-    if (tagName === "rect") {
+    const clusterId = clusterFrame?.clusterId;
+    if (tagName === "rect" && clusterId && !nodeFrame) {
+      // Cluster rects are usually absolute (no translate on the cluster's ancestors).
       const x = num(attr(tag, "x")), y = num(attr(tag, "y")), w = num(attr(tag, "width")), h = num(attr(tag, "height"));
-      if (clusterFrame && !nodeFrame) {
-        const c = cum();
-        // cluster rect coords are absolute in Pele output (cluster g has no translate usually); if cum is 0 use as-is, else add
-        const bx = c.x === 0 && c.y === 0 ? x : x + c.x;
-        const by = c.x === 0 && c.y === 0 ? y : y + c.y;
-        clusters.set(clusterFrame.clusterId!, { x: bx, y: by, width: w, height: h, cx: bx + w / 2, cy: by + h / 2 });
-      } else if (nodeFrame && !nodeFrame.nodeBBox) {
-        // centre = cumulative translate including node frame
-        // compute cumulative up to nodeFrame
-        let cx = 0, cy = 0; for (const f of stack) { cx += f.tx; cy += f.ty; if (f === nodeFrame) break; }
-        nodeFrame.nodeBBox = { x: cx + x, y: cy + y, width: w, height: h, cx: cx + x + w / 2, cy: cy + y + h / 2 };
-        // store actual centre as node centre (translate point)
-        nodeFrame.nodeBBox.cx = cx; nodeFrame.nodeBBox.cy = cy;
-        // recompute x/y from centre? Keep bbox x/y, but cx/cy should be translate centre:
-        nodeFrame.nodeBBox = { x: cx + x, y: cy + y, width: w, height: h, cx, cy };
-      }
-    } else if (tagName === "circle") {
-      const r = num(attr(tag, "r")); const ccx = num(attr(tag, "cx")), ccy = num(attr(tag, "cy"));
-      if (edgeFrame && cls0(tag)) { /* marker circle, ignore */ }
-      else if (nodeFrame && !nodeFrame.nodeBBox) {
-        let cx = 0, cy = 0; for (const f of stack) { cx += f.tx; cy += f.ty; if (f === nodeFrame) break; }
-        nodeFrame.nodeBBox = { x: cx + ccx - r, y: cy + ccy - r, width: 2 * r, height: 2 * r, cx, cy };
-      }
-    } else if (tagName === "polygon") {
-      const ptsStr = attr(tag, "points") ?? "";
-      const nums = ptsStr.trim().split(/[\s,]+/).map(Number).filter(Number.isFinite);
-      if (nodeFrame && !nodeFrame.nodeBBox && nums.length >= 2) {
-        let cx = 0, cy = 0; for (const f of stack) { cx += f.tx; cy += f.ty; if (f === nodeFrame) break; }
-        const xs: number[] = [], ys: number[] = [];
-        for (let i = 0; i + 1 < nums.length; i += 2) { xs.push(nums[i]); ys.push(nums[i + 1]); }
-        const x1 = Math.min(...xs), x2 = Math.max(...xs), y1 = Math.min(...ys), y2 = Math.max(...ys);
-        nodeFrame.nodeBBox = { x: cx + x1, y: cy + y1, width: x2 - x1, height: y2 - y1, cx, cy };
-      }
-    } else if (tagName === "path") {
-      const d = attr(tag, "d") ?? "";
-      const clsA = attr(tag, "class") ?? "";
-      if (edgeFrame && !edgeFrame.edgeD) { edgeFrame.edgeD = d; }
-      else if (clsA.includes("pele-edge") ) {
-        // mindmap direct path edge, no id: ignore geometry
-      } else if (nodeFrame && !nodeFrame.nodeBBox && d) {
-        let cx = 0, cy = 0; for (const f of stack) { cx += f.tx; cy += f.ty; if (f === nodeFrame) break; }
-        const pts = pathPoints(d);
-        if (pts.length) {
-          const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
-          const x1 = Math.min(...xs), x2 = Math.max(...xs), y1 = Math.min(...ys), y2 = Math.max(...ys);
-          nodeFrame.nodeBBox = { x: cx + x1, y: cy + y1, width: x2 - x1, height: y2 - y1, cx, cy };
-        }
-      }
+      const c = cum();
+      const bx = x + c.x, by = y + c.y;
+      clusters.set(clusterId, { x: bx, y: by, width: w, height: h, cx: bx + w / 2, cy: by + h / 2 });
+      continue;
     }
+    if (tagName === "path" && edgeFrame && !edgeFrame.edgeD) { edgeFrame.edgeD = attr(tag, "d") ?? ""; continue; }
+    if (!nodeFrame || nodeFrame.nodeBBox) continue;
+    // The node's centre is its translate, not the middle of its shape.
+    const { x: cx, y: cy } = originOf(nodeFrame);
+    const box = nodeShapeBox(tagName, tag, edgeFrame !== undefined, cx, cy);
+    if (box) nodeFrame.nodeBBox = box;
   }
   return { width, height, nodes, clusters, edges };
 }
-function cls0(tag: string): boolean { return (attr(tag, "class") ?? "").includes("pele-marker"); }
+
+/**
+ * Absolute box of one shape tag in a node centred at (cx, cy), or null when
+ * the tag doesn't give the node a box (not a shape, an edge marker circle, a
+ * mindmap's id-less `.pele-edge` path, no points).
+ */
+function nodeShapeBox(tagName: string, tag: string, inEdge: boolean, cx: number, cy: number): BBox | null {
+  if (tagName === "rect") {
+    const x = num(attr(tag, "x")), y = num(attr(tag, "y")), w = num(attr(tag, "width")), h = num(attr(tag, "height"));
+    return { x: cx + x, y: cy + y, width: w, height: h, cx, cy };
+  }
+  if (tagName === "circle") {
+    if (inEdge && isMarkerTag(tag)) return null;
+    const r = num(attr(tag, "r")), ccx = num(attr(tag, "cx")), ccy = num(attr(tag, "cy"));
+    return { x: cx + ccx - r, y: cy + ccy - r, width: 2 * r, height: 2 * r, cx, cy };
+  }
+  if (tagName === "polygon") {
+    const nums = (attr(tag, "points") ?? "").trim().split(/[\s,]+/).map(Number).filter(Number.isFinite);
+    if (nums.length < 2) return null;
+    const xs: number[] = [], ys: number[] = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) { xs.push(nums[i]); ys.push(nums[i + 1]); }
+    return spanBox(xs, ys, cx, cy);
+  }
+  if (tagName === "path") {
+    if ((attr(tag, "class") ?? "").includes("pele-edge")) return null;
+    const d = attr(tag, "d") ?? "";
+    const pts = d ? pathPoints(d) : [];
+    return pts.length ? spanBox(pts.map(p => p.x), pts.map(p => p.y), cx, cy) : null;
+  }
+  return null;
+}
+
+/** Box spanning node-local coordinates, placed at the node centre (cx, cy). */
+function spanBox(xs: number[], ys: number[], cx: number, cy: number): BBox {
+  const x1 = Math.min(...xs), x2 = Math.max(...xs), y1 = Math.min(...ys), y2 = Math.max(...ys);
+  return { x: cx + x1, y: cy + y1, width: x2 - x1, height: y2 - y1, cx, cy };
+}
+/** Whether a tag is an edge marker (`class` includes `pele-marker`). */
+function isMarkerTag(tag: string): boolean { return (attr(tag, "class") ?? "").includes("pele-marker"); }

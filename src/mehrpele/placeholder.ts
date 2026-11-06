@@ -229,12 +229,7 @@ export function spanNeedsUnquoting(source: string, label: MehrpeleLabel): boolea
  * except state/sequence forms, see spanNeedsUnquoting).
  * Labels without a reserved size keep their original quoted text.
  */
-export function placeholderSource(
-  source: string,
-  reserved: ReservedLabel[],
-  fontSize: number = DEFAULT_FONT_SIZE,
-): string {
-  void fontSize;
+export function placeholderSource(source: string, reserved: ReservedLabel[]): string {
   const clean = stripMehrpeleDirective(source);
   if (reserved.length === 0) return clean;
   // Replace from the end so earlier spans stay valid.

@@ -23,18 +23,13 @@
  * Without the directive, or for other diagram types, rendering is unchanged.
  * Any failure falls back to Pele's own layout.
  */
-import type { Diagram, RenderOptions } from "pele";
-import { stripComments } from "../node-size/solve.js";
-import { edgeKey, parseLayoutDirective, type CanvasLayout } from "./layout-directive.js";
+import type { Diagram } from "pele";
+import { directiveMeta, wrapDiagram, type RenderArgs } from "../directive/wrap.js";
+import { edgeKey, parseLayoutDirective, type CanvasLayout } from "./directive.js";
 import { labelAnchor, ROUTE_BUDGET, routeEdge, type Rect } from "./route.js";
 import { parseSvgGeometry } from "./svg-geom.js";
 
 const LAYOUT = Symbol.for("pele-render.canvas-layout");
-
-/** Pele's diagram config (not exported by name from "pele"). */
-type PeleConfig = Parameters<Diagram<unknown>["render"]>[1];
-/** A value that may carry the non-enumerable LAYOUT tag. */
-type Tagged<T> = { [LAYOUT]?: T } | null | undefined;
 
 /** Pele's compound-layout node (pele/dist/layout/compound.d.ts). */
 interface CNode {
@@ -72,11 +67,16 @@ interface FlowVariant {
 const GAP = 24;
 
 const rectOf = (n: CNode): Rect => ({ x: n.x - n.w / 2, y: n.y - n.h / 2, w: n.w, h: n.h });
+/** Smallest rect holding both. */
+const unionRect = (a: Rect, b: Rect): Rect => {
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+};
 const overlaps = (a: Rect, b: Rect, gap = 0) =>
   a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
 
 /** Node centres of Pele's own layout (for placing unpinned nodes). */
-function autoCentres<M>(d: Diagram<M>, model: M, config: PeleConfig, options: RenderOptions): Map<string, { x: number; y: number }> {
+function autoCentres<M>(d: Diagram<M>, model: M, config: RenderArgs<M>[1], options: RenderArgs<M>[2]): Map<string, { x: number; y: number }> {
   const out = new Map<string, { x: number; y: number }>();
   try {
     const geom = parseSvgGeometry(d.render(model, config, options).svg);
@@ -96,7 +96,7 @@ function canvasVariant(layout: CanvasLayout, auto: () => Map<string, { x: number
     },
     layout(nodes, edges, dir) {
       const ids = graph.nodes.map((n) => n.id);
-      const leaves = nodes.map((n, i) => i).filter((i) => !nodes[i].isGroup);
+      const leaves = nodes.map((_, i) => i).filter((i) => !nodes[i].isGroup);
       const placed = new Set<number>();
       // 1. pinned leaves
       for (const i of leaves) {
@@ -160,10 +160,10 @@ function canvasVariant(layout: CanvasLayout, auto: () => Map<string, { x: number
         for (let p = nodes[i].parent; p >= 0 && d < 1000; p = nodes[p].parent) d++;
         return d;
       };
-      const groups = nodes.map((n, i) => i).filter((i) => nodes[i].isGroup).sort((p, q) => depth(q) - depth(p));
+      const groups = nodes.map((_, i) => i).filter((i) => nodes[i].isGroup).sort((p, q) => depth(q) - depth(p));
       for (const gi of groups) {
         const g = nodes[gi];
-        const kids = nodes.map((n, i) => i).filter((i) => nodes[i].parent === gi && i !== gi);
+        const kids = nodes.map((_, i) => i).filter((i) => nodes[i].parent === gi && i !== gi);
         let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
         for (const k of kids) {
           const r = rectOf(nodes[k]);
@@ -176,12 +176,7 @@ function canvasVariant(layout: CanvasLayout, auto: () => Map<string, { x: number
         let rect: Rect | null = kids.length ? { x: x1 - g.padX, y: y1 - g.padTop, w: x2 - x1 + 2 * g.padX, h: y2 - y1 + g.padTop + g.padBottom } : null;
         if (pin && pin.w !== undefined && pin.h !== undefined) {
           const pr = { x: pin.x - pin.w / 2, y: pin.y - pin.h / 2, w: pin.w, h: pin.h };
-          rect = rect
-            ? (() => {
-                const ax = Math.min(rect.x, pr.x), ay = Math.min(rect.y, pr.y);
-                return { x: ax, y: ay, w: Math.max(rect.x + rect.w, pr.x + pr.w) - ax, h: Math.max(rect.y + rect.h, pr.y + pr.h) - ay };
-              })()
-            : pr;
+          rect = rect ? unionRect(rect, pr) : pr;
         }
         if (!rect) {
           const c = pin ?? { x: 0, y: 0 };
@@ -261,30 +256,19 @@ interface LayoutMeta {
 
 /** Wrap Pele's flowchart so `%% pele-layout canvas %%` pins node positions. */
 export function withCanvasLayout<M>(d: Diagram<M>): Diagram<M> {
-  if (d.type !== "flowchart" || (d as Diagram<M> & Tagged<unknown>)[LAYOUT]) return d;
-  const wrapped: Diagram<M> = {
-    ...d,
-    keepComments: true,
-    parse(source, config, title, lineOffset, limits) {
-      const text = d.keepComments ? source : stripComments(source);
-      const model = d.parse(text, config, title, lineOffset, limits);
-      if (source.includes("pele-layout") && model && typeof model === "object") {
-        const layout = parseLayoutDirective(source);
-        if (layout.mode === "canvas") {
-          const meta: LayoutMeta = { layout };
-          Object.defineProperty(model, LAYOUT, { value: meta, enumerable: false, configurable: true });
-        }
-      }
-      return model;
+  if (d.type !== "flowchart") return d;
+  return wrapDiagram<M, LayoutMeta>(d, LAYOUT, {
+    marker: "pele-layout",
+    read(source) {
+      const layout = parseLayoutDirective(source);
+      return layout.mode === "canvas" ? { layout } : undefined;
     },
-    render(model, config, options) {
-      const meta = (model as Tagged<LayoutMeta>)?.[LAYOUT];
-      if (!meta) return d.render(model, config, options);
+    render(model, meta, config, options) {
       let auto: Map<string, { x: number; y: number }> | null = null;
       const variant = canvasVariant(meta.layout, () => (auto ??= autoCentres(d, model, config, options)));
       // Orthogonal routes: Pele's step curves round each corner with a small
       // radius (other curves smooth whole segments). A configured curve wins.
-      const fc = (config as PeleConfig | undefined)?.flowchart;
+      const fc = config?.flowchart;
       const cfg = { ...config, flowchart: { curve: "step", ...(fc && typeof fc === "object" ? fc : {}) } };
       try {
         return (d.render as (m: M, c: unknown, o: unknown, v: FlowVariant) => ReturnType<Diagram<M>["render"]>)(model, cfg, options, variant);
@@ -292,12 +276,10 @@ export function withCanvasLayout<M>(d: Diagram<M>): Diagram<M> {
         return d.render(model, config, options);
       }
     },
-  };
-  Object.defineProperty(wrapped, LAYOUT, { value: true, enumerable: false });
-  return wrapped;
+  });
 }
 
 /** Whether a parsed model renders in canvas layout mode. */
 export function usesCanvasLayout(model: unknown): boolean {
-  return !!(model as Tagged<unknown>)?.[LAYOUT];
+  return !!directiveMeta(model, LAYOUT);
 }

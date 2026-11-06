@@ -6,7 +6,7 @@ import {
   diffLines,
   playgroundUrl as enginePlaygroundUrl
 } from "pele-render/repair";
-import { buildPlaygroundUrl } from "./render-policy";
+import { buildPlaygroundUrl } from "../render-policy";
 
 export class ConfirmModal extends Modal {
   private done = false;

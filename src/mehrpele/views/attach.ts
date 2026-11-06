@@ -10,9 +10,16 @@
  * popovers: never clipped by the diagram frame, never moved), follow the
  * node while it scrolls, and close on Escape, the close button, or when the
  * diagram goes away. The panel's live views are pinned in the pool.
+ *
+ * Keyboard: the button is a button (Tab, Enter/Space) and stays while it has
+ * focus. Nodes get no tab stops; the command "Show attached views" opens the
+ * panel of the hovered node, else of the first node with views in the diagram
+ * holding focus (its action bar), and the next node on each further run.
+ * The panel takes focus and gives it back when it closes.
  */
 import { setIcon, setTooltip } from "obsidian";
-import { asButton } from "../../a11y";
+import { asButton, FocusTrap } from "../../a11y";
+import { actionBarOf, actionRootOf } from "../../action-bar-location";
 import { extractLabels } from "../extract";
 import { parseViewDirective, type AttachedView } from "./directive";
 import { CORE_VIEWS } from "./state";
@@ -73,31 +80,38 @@ export class AttachedViewsLayer {
   private lastTarget: Element | null = null;
   private panel: AttachedPanel | null = null;
   private cache: { source: string; views: AttachedView[] } | null = null;
+  /** The last focused element inside a diagram or panel, for the keyboard route. */
+  private lastFocus: Element | null = null;
 
   constructor(
     private host: ViewNodesHost,
     private hub: ViewHub,
     private resolve: DiagramResolver,
   ) {
-    this.btn = document.body.createDiv({ cls: "mehrpele-view-attach-btn" });
+    this.btn = asButton(document.body.createDiv({ cls: "mehrpele-view-attach-btn" }));
     this.btn.hide();
     setIcon(this.btn.createSpan({ cls: "mehrpele-view-attach-icon" }), "layout-panel-top");
     this.btn.createSpan({ cls: "mehrpele-view-attach-count" });
     this.btn.addEventListener("pointerenter", () => this.cancelHide());
     this.btn.addEventListener("pointerleave", () => this.scheduleHide());
+    this.btn.addEventListener("focusin", () => this.cancelHide());
+    this.btn.addEventListener("focusout", () => this.scheduleHide());
     this.btn.addEventListener("pointerdown", (e) => e.stopPropagation());
     this.btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       const h = this.hovered;
       if (!h) return;
-      this.openPanel(h);
+      // Activated from the keyboard (a mouse click leaves focus where it was): focus follows into the panel.
+      if (this.btn.contains(this.btn.ownerDocument.activeElement)) this.openFromKeyboard(h);
+      else this.openPanel(h);
     });
   }
 
   /** Document pointermove (registered by the plugin). */
   onPointerMove = (e: PointerEvent): void => {
-    this.lastTarget = e.target instanceof Element ? e.target : null;
+    const target = e.target as Element | null;
+    this.lastTarget = typeof target?.closest === "function" ? target : null;
     if (this.moveReq !== null) return;
     this.moveReq = window.requestAnimationFrame(() => {
       this.moveReq = null;
@@ -115,6 +129,53 @@ export class AttachedViewsLayer {
       this.panel = null;
     }
   };
+
+  /** Document focusin (registered by the plugin): remember the diagram or panel that holds focus. */
+  onFocusIn = (e: FocusEvent): void => {
+    const target = e.target as Element | null;
+    const t = typeof target?.closest === "function" ? target : null;
+    if (this.hovered && this.hovered.info.wrapper.ownerDocument !== t?.ownerDocument) this.hideNow();
+    // The command palette and other dialogs take focus to run the command: keep the diagram.
+    if (t?.closest(".modal-container")) return;
+    this.lastFocus = t?.closest(".embed-actions, .pele-host, .mehrpele-view-panel") ? t : null;
+  };
+
+  private enabled(): boolean {
+    const s = this.host.settings();
+    return s.enabled && s.attachedViews;
+  }
+
+  /**
+   * The node whose views the keyboard route opens: the hovered node (the
+   * button's), else in the diagram holding focus its first node with views,
+   * or the node after the open panel's.
+   */
+  keyboardTarget(): Hovered | null {
+    if (!this.enabled()) return null;
+    if (this.hovered) return this.hovered;
+    const t = this.lastFocus?.isConnected ? this.lastFocus : null;
+    const inPanel = t && this.panel?.el.contains(t) ? this.panel : null;
+    const bar = t?.closest<HTMLElement>(".embed-actions");
+    const root = (bar ? actionRootOf(bar) : null) ?? t?.closest(".pele-host")?.parentElement;
+    const wrapper = inPanel?.info.wrapper ?? root?.querySelector<HTMLElement>(":scope > .pele-host");
+    const info = wrapper ? this.resolve(wrapper) : null;
+    if (!info) return null;
+    const views = this.viewsOf(info.source);
+    const nodes = [...new Set(views.map((v) => v.node))].filter((node) => nodeElement(info.wrapper, node));
+    const open = this.panel?.info.wrapper === info.wrapper ? nodes.indexOf(this.panel.node) : -1;
+    const node = nodes[(open + 1) % nodes.length];
+    return node === undefined ? null : { info, node, views: views.filter((v) => v.node === node) };
+  }
+
+  /** Open a node's panel from the keyboard: focus moves to its first tab. */
+  openFromKeyboard(h: Hovered): void {
+    // Opening hides the floating button; return to a stable action in its diagram.
+    if (this.btn.contains(this.btn.ownerDocument.activeElement)) {
+      const root = h.info.wrapper.parentElement;
+      if (root) actionBarOf(root)?.querySelector<HTMLElement>(":scope > [role=button]")?.focus();
+    }
+    this.openPanel(h).takeFocus();
+  }
 
   private viewsOf(source: string): AttachedView[] {
     if (this.cache?.source !== source) this.cache = { source, views: parseViewDirective(source).views };
@@ -143,6 +204,8 @@ export class AttachedViewsLayer {
     const el = nodeElement(h.info.wrapper, h.node);
     if (!el) return this.hideNow();
     const r = el.getBoundingClientRect();
+    // Coordinates belong to the node's window, including in a popout.
+    if (this.btn.ownerDocument !== h.info.wrapper.ownerDocument) h.info.wrapper.ownerDocument.body.appendChild(this.btn);
     this.btn.show();
     this.btn.style.left = `${Math.round(r.right - 26)}px`;
     this.btn.style.top = `${Math.round(r.top - 10)}px`;
@@ -161,6 +224,7 @@ export class AttachedViewsLayer {
     if (this.hideTimer !== null || !this.hovered) return;
     this.hideTimer = window.setTimeout(() => {
       this.hideTimer = null;
+      if (this.btn.contains(this.btn.ownerDocument.activeElement)) return;
       this.hideNow();
     }, HIDE_DELAY_MS);
   }
@@ -214,18 +278,22 @@ export class AttachedPanel {
   private ro: ResizeObserver;
   private expanded = false;
   private closed = false;
+  private trap: FocusTrap;
+  private win: Window & Pick<typeof window, "ResizeObserver">;
   private onScroll = (): void => this.schedulePlace();
 
   constructor(
     private host: ViewNodesHost,
     private hub: ViewHub,
-    private info: DiagramInfo,
+    readonly info: DiagramInfo,
     readonly node: string,
     private views: AttachedView[],
     private onClose: () => void,
   ) {
-    this.el = document.body.createDiv({ cls: "mehrpele-view-panel" });
+    this.el = info.wrapper.ownerDocument.body.createDiv({ cls: "mehrpele-view-panel" });
+    this.win = this.el.ownerDocument.defaultView ?? window;
     this.el.dataset.node = node;
+    this.trap = new FocusTrap(this.el);
     const head = this.el.createDiv({ cls: "mehrpele-view-panel-head" });
     this.tabs = head.createDiv({ cls: "mehrpele-view-panel-tabs" });
     views.forEach((v, i) => {
@@ -261,14 +329,19 @@ export class AttachedPanel {
     this.body = this.el.createDiv({ cls: "mehrpele-view-panel-body" });
     for (const type of ["pointerdown", "mousedown", "click", "dblclick", "contextmenu"]) this.el.addEventListener(type, (e) => e.stopPropagation());
     this.el.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
-    this.ro = new ResizeObserver(() => {
+    this.ro = new this.win.ResizeObserver(() => {
       const d = this.docks.get(this.selected);
       if (d instanceof Dock) d.resized();
     });
     this.ro.observe(this.body);
-    window.addEventListener("scroll", this.onScroll, { capture: true, passive: true });
-    window.addEventListener("resize", this.onScroll, { passive: true });
+    this.win.addEventListener("scroll", this.onScroll, { capture: true, passive: true });
+    this.win.addEventListener("resize", this.onScroll, { passive: true });
     this.place();
+  }
+
+  /** Focus the first tab; focus goes back to where it was when the panel closes. */
+  takeFocus(): void {
+    this.trap.activate(this.tabs.querySelector<HTMLElement>(".mehrpele-view-panel-tab"));
   }
 
   select(i: number): void {
@@ -305,7 +378,7 @@ export class AttachedPanel {
 
   private schedulePlace(): void {
     if (this.raf !== null || this.closed) return;
-    this.raf = window.requestAnimationFrame(() => {
+    this.raf = this.win.requestAnimationFrame(() => {
       this.raf = null;
       this.place();
     });
@@ -334,8 +407,8 @@ export class AttachedPanel {
     if (hidden || !r) return;
     const w = this.el.offsetWidth || 440;
     const h = this.el.offsetHeight || 340;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const vw = this.win.innerWidth;
+    const vh = this.win.innerHeight;
     let top = r.bottom + 8;
     if (top + h > vh - 8 && r.top - 8 - h > 8) top = r.top - 8 - h;
     top = Math.max(8, Math.min(top, vh - h - 8));
@@ -349,12 +422,15 @@ export class AttachedPanel {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    window.removeEventListener("scroll", this.onScroll, { capture: true });
-    window.removeEventListener("resize", this.onScroll);
-    if (this.raf !== null) cancelAnimationFrame(this.raf);
+    this.win.removeEventListener("scroll", this.onScroll, { capture: true });
+    this.win.removeEventListener("resize", this.onScroll);
+    if (this.raf !== null) this.win.cancelAnimationFrame(this.raf);
     this.ro.disconnect();
     for (const d of this.docks.values()) if (d instanceof Dock) d.destroy();
     this.docks.clear();
+    // Give focus back only if it is still ours (not when the user moved on).
+    const active = this.el.ownerDocument.activeElement;
+    if (!active || active === this.el.ownerDocument.body || this.el.contains(active)) this.trap.release();
     this.el.remove();
     this.onClose();
   }

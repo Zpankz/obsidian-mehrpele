@@ -11,7 +11,9 @@ import { findOpeningFenceLine } from "../fence-locate";
 import { fenceRestOf, parseFenceSize, serializeFenceSize, type FenceSize, type FenceSizeEdit } from "../info-width";
 import { advancedUri, openUri, planFenceBlockId, wikilinkToBlock, type BlockIdPlan } from "../diagram-link";
 import { type LpWidgetLike } from "../lp-patch";
+import { escapeToEditor } from "./focus-actions";
 import { lpLocate } from "./locate";
+import { isCannoliFence, parsePeleSource } from "../api/pele-source";
 import type PeleMermaidPlugin from "../../main";
 import { dispatchBlockReplace, frameHostOf } from "../frame-host";
 import { generatorContext, mehrpeleShell } from "../features/lazy";
@@ -23,6 +25,7 @@ export function buildLpWidgetDOM(plugin: PeleMermaidPlugin, widget: LpWidgetLike
   s.className = `cm-preview-code-block cm-embed-block markdown-rendered cm-lang-${widget.lang}`;
   s.tabIndex = -1;
   widget.containerEl = s;
+  escapeToEditor(s, view);
   buildLpFrame(plugin, widget, view, s);
   try {
     widget.resizeWidget?.(view, s);
@@ -96,12 +99,40 @@ export function applyLpFenceWidths(
   }
 }
 
+/** Info-only edits may bypass widget reuse callbacks; revisit the visible fence modes. */
+export function refreshLpFenceModes(plugin: PeleMermaidPlugin, view: EditorView): void {
+  view.dom.querySelectorAll<HTMLElement>(".cm-preview-code-block").forEach((dom) => {
+    const tile = dom as HTMLElement & { cmView?: { widget?: LpWidgetLike }; cmTile?: { widget?: LpWidgetLike } };
+    const widget = tile.cmTile?.widget ?? tile.cmView?.widget;
+    const location = lpLocate(view, dom);
+    if (widget && location) handleLpWidgetReuse(plugin, { ...widget, lineStart: location.line }, dom, view);
+  });
+}
+
 /** CM reused a widget DOM (eq match): re-read the fence; rebuild if needed. */
 export function handleLpWidgetReuse(plugin: PeleMermaidPlugin, widget: LpWidgetLike, dom: HTMLElement, view: EditorView): boolean {
   // The fence may sit on another line, or its info string changed: companion keys follow.
   plugin.frameHandles.resyncSoon();
+  const embed = plugin.canvasEmbedsByDom.get(dom);
+  if (embed) {
+    // Same body and info string: the mount stays (it re-renders on canvas modify itself).
+    if (embed.code === widget.code && embed.rest === lpFenceRest(view, widget)) return true;
+    embed.destroy();
+    plugin.canvasEmbedsByDom.delete(dom);
+    dom.replaceChildren();
+    buildLpFrame(plugin, widget, view, dom);
+    return true;
+  }
   const shell = plugin.mehrByDom.get(dom);
   if (shell) {
+    // A body edited into a pele-source line on a cannoli fence becomes a canvas embed, never a shell over the comment.
+    if (parsePeleSource(widget.code) !== null && isCannoliFence(lpFenceRest(view, widget))) {
+      shell.destroy();
+      plugin.mehrByDom.delete(dom);
+      dom.replaceChildren();
+      buildLpFrame(plugin, widget, view, dom);
+      return true;
+    }
     if (widget.code !== shell.source) shell.update(widget.code);
     try {
       const line = view.state.doc.line(widget.lineStart + 1);
@@ -113,7 +144,7 @@ export function handleLpWidgetReuse(plugin: PeleMermaidPlugin, widget: LpWidgetL
   }
   const frame = plugin.framesByDom.get(dom);
   if (!frame) return false;
-  if (widget.code !== frame.source || widget.lang !== frame.lang) {
+  if (widget.code !== frame.source || widget.lang !== frame.lang || (isCannoliFence(lpFenceRest(view, widget)) && parsePeleSource(widget.code) !== null)) {
     frame.destroy();
     plugin.framesByDom.delete(dom);
     dom.replaceChildren();
@@ -129,7 +160,7 @@ export function handleLpWidgetReuse(plugin: PeleMermaidPlugin, widget: LpWidgetL
   return true;
 }
 
-export function buildLpFrame(plugin: PeleMermaidPlugin, widget: LpWidgetLike, view: EditorView, container: HTMLElement): DiagramFrame | MehrpeleShell {
+export function buildLpFrame(plugin: PeleMermaidPlugin, widget: LpWidgetLike, view: EditorView, container: HTMLElement): DiagramFrame | MehrpeleShell | null {
   let size: FenceSize = {};
   let fenceRest = "";
   try {
@@ -146,6 +177,13 @@ export function buildLpFrame(plugin: PeleMermaidPlugin, widget: LpWidgetLike, vi
     // A reused widget keeps its lineStart when lines are added above: read the live doc.
     locate: () => lpLocate(view, container),
   };
+
+  // A canvas embed: the canvas through mountCanvas, never a write-back frame over the comment body.
+  const embed = plugin.canvasEmbed(widget.code, container, sourcePath, companion);
+  if (embed) {
+    plugin.canvasEmbedsByDom.set(container, { code: widget.code, rest: fenceRest, destroy: () => embed.destroy() });
+    return null;
+  }
 
   if (plugin.appliesMehrpele(widget.lang, widget.code)) {
     const shell: MehrpeleShell = new (mehrpeleShell().MehrpeleShell)(plugin, plugin, {
@@ -203,6 +241,15 @@ export function buildLpFrame(plugin: PeleMermaidPlugin, widget: LpWidgetLike, vi
   frame.load();
   plugin.framesByDom.set(container, frame);
   return frame;
+}
+
+/** The info-string rest of the widget's fence line ("" when the line can't be read). */
+function lpFenceRest(view: EditorView, widget: LpWidgetLike): string {
+  try {
+    return fenceRestOf(view.state.doc.line(widget.lineStart + 1).text);
+  } catch {
+    return "";
+  }
 }
 
 /** Resolve the file for a CM view: leaf whose editor.cm is this view first. */

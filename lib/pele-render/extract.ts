@@ -1,4 +1,4 @@
-import { detectType } from "./pele.js";
+import { detectTypeOrNull } from "./detect.js";
 import type { DiagramType } from "pele";
 
 export interface MermaidBlock {
@@ -88,12 +88,6 @@ export function extractMermaidBlocks(markdown: string, opts: ExtractOptions = {}
     const endIdx = closed ? j : lines.length;
     if (isMermaid) {
       const source = lines.slice(i + 1, endIdx).join("\n");
-      let type: DiagramType | null = null;
-      try {
-        type = detectType(source);
-      } catch {
-        type = null;
-      }
       blocks.push({
         index: blocks.length,
         startLine: i + 1,
@@ -101,7 +95,7 @@ export function extractMermaidBlocks(markdown: string, opts: ExtractOptions = {}
         endLine: closed ? j + 1 : lines.length,
         closed,
         lang,
-        type,
+        type: detectTypeOrNull(source),
         source,
         indent,
         ...fenceSize(info),

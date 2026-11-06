@@ -6,7 +6,7 @@
  * margins and the stub ends; searched first in a window around the two
  * nodes, then over everything. Pure geometry, no Pele, no DOM.
  */
-import type { Side } from "./layout-directive.js";
+import type { Side } from "./directive.js";
 
 /** Axis-aligned box, top-left based. */
 export interface Rect {

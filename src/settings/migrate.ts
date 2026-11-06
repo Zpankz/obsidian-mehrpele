@@ -41,6 +41,7 @@ export function v2ToV3(v2: PeleSettings, ctx: MigrateContext = {}, storedSanitiz
       overrideMermaid: v2.overrideMermaid,
       iconsEnabled: v2.iconsEnabled,
       ganttToday: v2.ganttToday,
+      showAddonHints: d.core.showAddonHints,
       appearance: { maxWidth: v2.maxWidth, fontFamily: v2.fontFamily, fontSize: v2.fontSize },
       security: {
         allowLinks: v2.allowLinks,

@@ -229,7 +229,6 @@ function classify(source: string, span: QuotedSpan, edgeOrdinal: { n: number }):
   const prevChar = source[span.start - 1] ?? "";
 
   // Subgraph title: `subgraph "Title"`, `subgraph id "Title"`, `subgraph id["Title"]`.
-  const sub = /^\s*subgraph\s+(\S+)?\s*$/.exec(line.slice(0, span.start - lineStartOf(source, span.start)));
   if (/^\s*subgraph\b/.test(line)) {
     const head = line.slice(0, span.start - lineStartOf(source, span.start));
     const toks = head.trim().split(/\s+/);
@@ -238,7 +237,6 @@ function classify(source: string, span: QuotedSpan, edgeOrdinal: { n: number }):
     if (!subId || subId === "[") subId = "cluster";
     return makeLabel(`subgraph:${subId}`, "cluster", span);
   }
-  void sub;
 
   // Sequence participant alias: `participant A as "..."` / `actor A as "..."`.
   if (/^\s*(participant|actor)\s+\S+\s+as\s*$/.test(line.slice(0, span.start - lineStartOf(source, span.start)))) {
@@ -308,7 +306,6 @@ export function extractLabels(source: string): MehrpeleLabel[] {
   const spans = findQuotedSpans(clean);
   const labels: MehrpeleLabel[] = [];
   const edgeOrdinal = { n: 0 };
-  void edgeOrdinal;
   for (const span of spans) {
     const label = classify(clean, span, edgeOrdinal);
     if (label) labels.push(label);

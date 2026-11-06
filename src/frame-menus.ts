@@ -13,15 +13,15 @@ import type { FrameSurface } from "./api/frame-handles";
 export function showMehrpeleMenu(plugin: PeleMermaidPlugin, shell: MehrpeleShell, evt: MouseEvent): void {
   showDiagramMenu(plugin, evt, shell, "mehrpele", {
     svg: () => shell.flattenedSvg(),
-    png: () => void copyShellPng(plugin, shell),
+    png: () => void copyShellPng(shell),
     export: (kind) => void exportShell(plugin, shell, kind),
     link: (kind) => void plugin.copyDiagramLink(shell, kind),
   });
 }
 
-export async function copyShellPng(plugin: PeleMermaidPlugin, shell: MehrpeleShell): Promise<void> {
+export async function copyShellPng(shell: MehrpeleShell): Promise<void> {
   const r = shell.result();
-  const blob = r ? await pngBlobFromSvg(plugin, shell.flattenedSvg(), r.width, r.height) : null;
+  const blob = r ? await pngBlobFromSvg(shell.flattenedSvg(), r.width, r.height) : null;
   if (!blob) {
     new Notice("Pele: could not render PNG.");
     return;
@@ -48,7 +48,7 @@ export async function exportShell(plugin: PeleMermaidPlugin, shell: MehrpeleShel
     if (kind === "svg") await plugin.app.vault.create(path, shell.flattenedSvg());
     else {
       const r = shell.result();
-      const blob = r ? await pngBlobFromSvg(plugin, shell.flattenedSvg(), r.width, r.height) : null;
+      const blob = r ? await pngBlobFromSvg(shell.flattenedSvg(), r.width, r.height) : null;
       if (!blob) throw new Error("png render failed");
       await plugin.app.vault.createBinary(path, await blob.arrayBuffer());
     }
@@ -63,7 +63,7 @@ export async function exportShell(plugin: PeleMermaidPlugin, shell: MehrpeleShel
 export function showFrameMenu(plugin: PeleMermaidPlugin, frame: DiagramFrame, evt: MouseEvent): void {
   showDiagramMenu(plugin, evt, frame, frame.lang, {
     svg: () => frame.flattenedSvg(),
-    png: () => void copyFramePng(plugin, frame),
+    png: () => void copyFramePng(frame),
     export: (kind) => void exportFrame(plugin, frame, kind),
     link: (kind) => void plugin.copyDiagramLink(frame, kind),
   });
@@ -143,13 +143,13 @@ export function showDiagramMenu(
   });
 }
 
-export async function framePngBlob(plugin: PeleMermaidPlugin, frame: DiagramFrame): Promise<Blob | null> {
+export async function framePngBlob(frame: DiagramFrame): Promise<Blob | null> {
   const w = frame.diagramWidth || frame.root.offsetWidth || 800;
   const h = frame.diagramHeight || frame.root.offsetHeight || 600;
-  return pngBlobFromSvg(plugin, frame.flattenedSvg(), w, h);
+  return pngBlobFromSvg(frame.flattenedSvg(), w, h);
 }
 
-export async function pngBlobFromSvg(plugin: PeleMermaidPlugin, svg: string, w: number, h: number): Promise<Blob | null> {
+export async function pngBlobFromSvg(svg: string, w: number, h: number): Promise<Blob | null> {
   const scale = 2 * (window.devicePixelRatio || 1);
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   try {
@@ -173,8 +173,8 @@ export async function pngBlobFromSvg(plugin: PeleMermaidPlugin, svg: string, w: 
   }
 }
 
-export async function copyFramePng(plugin: PeleMermaidPlugin, frame: DiagramFrame): Promise<void> {
-  const blob = await framePngBlob(plugin, frame);
+export async function copyFramePng(frame: DiagramFrame): Promise<void> {
+  const blob = await framePngBlob(frame);
   if (!blob) {
     new Notice("Pele: could not render PNG.");
     return;
@@ -203,7 +203,7 @@ export async function exportFrame(plugin: PeleMermaidPlugin, frame: DiagramFrame
     if (kind === "svg") {
       await plugin.app.vault.create(path, frame.flattenedSvg());
     } else {
-      const blob = await framePngBlob(plugin, frame);
+      const blob = await framePngBlob(frame);
       if (!blob) throw new Error("png render failed");
       await plugin.app.vault.createBinary(path, await blob.arrayBuffer());
     }

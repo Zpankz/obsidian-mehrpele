@@ -3,6 +3,8 @@
 //  .pele-node[data-id] transform=translate(cx,cy), child shapes centred at origin
 //  .pele-edge[data-id] first non-marker <path d>, .pele-marker children
 //  .pele-cluster[data-id] > rect (absolute), title text inside or .pele-cluster-title
+import { attr, decodeEntities, num } from "../svg/read.js";
+
 export interface BBox { x: number; y: number; width: number; height: number }
 export interface NodeGeometry {
   id: string; cx: number; cy: number; bbox: BBox; shapeClass: string; label: string; fill?: string; stroke?: string; shapeCount: number;
@@ -19,14 +21,6 @@ export interface EdgeGeometry { id: string; d: string; dashed: boolean; thick: b
 export interface ClusterGeometry { id: string; bbox: BBox; title: string }
 export interface SvgGeometry { nodes: Map<string, NodeGeometry>; edges: Map<string, EdgeGeometry>; clusters: Map<string, ClusterGeometry>; width: number; height: number }
 
-function num(v: string | undefined, d = 0): number { const n = v === undefined ? NaN : parseFloat(v); return Number.isFinite(n) ? n : d; }
-function attr(tag: string, name: string): string | undefined {
-  const m = new RegExp(`\\b${name}="([^"]*)"`).exec(tag);
-  return m?.[1];
-}
-export function decodeEntities(s: string): string {
-  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, "&");
-}
 function textOf(inner: string): string {
   const m = /<text\b[^>]*>([\s\S]*?)<\/text>/.exec(inner);
   if (!m) return "";
@@ -79,32 +73,42 @@ function gBlocks(svg: string, cls: string): { attrs: string; id: string; inner: 
   return out.reverse();
 }
 
+/** One `.pele-node` group's geometry; null for nodes without a translate() (sequence actors). */
+function nodeGeometry(b: { attrs: string; id: string; inner: string }): NodeGeometry | null {
+  const t = /translate\(\s*(-?[\d.]+)[ ,]+(-?[\d.]+)\s*\)/.exec(b.attrs);
+  if (!t) return null;
+  const cx = Number(t[1]), cy = Number(t[2]);
+  const shape = /pele-shape-([a-z0-9-]+)/.exec(b.attrs)?.[1] ?? "rect";
+  const { bbox: local, shapeCount, fill, stroke } = shapeBBox(b.inner);
+  const polyTag = /<polygon\b[^>]*>/.exec(b.inner)?.[0];
+  const pathTags = [...b.inner.matchAll(/<path\b[^>]*>/g)].map((x) => x[0]);
+  const arc = /[Aa]\s*(-?[\d.]+)[\s,]+(-?[\d.]+)/.exec(pathTags.map((t) => attr(t, "d") ?? "").join(" "));
+  return { id: b.id, cx, cy, shapeClass: shape, label: textOf(b.inner), fill, stroke, shapeCount,
+    bbox: { x: cx + local.x, y: cy + local.y, width: local.width, height: local.height },
+    ...(polyTag ? { polygon: parsePoints(attr(polyTag, "points") ?? "") } : {}),
+    radii: [...b.inner.matchAll(/<circle\b[^>]*>/g)].map((x) => num(attr(x[0], "r"))),
+    ...(arc ? { arcRy: Math.abs(Number(arc[2])) } : {}),
+    barXs: barXs(pathTags) };
+}
+
+/** x of each vertical bar subpath (`M x,y V y'`) in the unfilled paths. */
+function barXs(pathTags: string[]): number[] {
+  const out: number[] = [];
+  for (const t of pathTags) {
+    const d = (attr(t, "d") ?? "").replace(/\s+/g, "");
+    if (attr(t, "fill") !== "none" || !/^(M-?[\d.]+,-?[\d.]+V-?[\d.]+)+$/.test(d)) continue;
+    for (const m of d.matchAll(/M(-?[\d.]+),/g)) out.push(Number(m[1]));
+  }
+  return out;
+}
+
 export function extractGeometry(svg: string): SvgGeometry {
   const vb = /viewBox="([-\d.\s]+)"/.exec(svg);
   const parts = vb ? vb[1].trim().split(/\s+/).map(Number) : [0, 0, 0, 0];
   const nodes = new Map<string, NodeGeometry>();
   for (const b of gBlocks(svg, "pele-node")) {
-    // flowchart nodes only: must carry translate(); others (sequence actors) skipped here
-    const t = /translate\(\s*(-?[\d.]+)[ ,]+(-?[\d.]+)\s*\)/.exec(b.attrs);
-    if (!t) continue;
-    const cx = Number(t[1]), cy = Number(t[2]);
-    const shape = /pele-shape-([a-z0-9-]+)/.exec(b.attrs)?.[1] ?? "rect";
-    const { bbox: local, shapeCount, fill, stroke } = shapeBBox(b.inner);
-    const polyTag = /<polygon\b[^>]*>/.exec(b.inner)?.[0];
-    const pathTags = [...b.inner.matchAll(/<path\b[^>]*>/g)].map((x) => x[0]);
-    const arc = /[Aa]\s*(-?[\d.]+)[\s,]+(-?[\d.]+)/.exec(pathTags.map((t) => attr(t, "d") ?? "").join(" "));
-    const barXs: number[] = [];
-    for (const t of pathTags) {
-      const d = (attr(t, "d") ?? "").replace(/\s+/g, "");
-      if (attr(t, "fill") !== "none" || !/^(M-?[\d.]+,-?[\d.]+V-?[\d.]+)+$/.test(d)) continue;
-      for (const m of d.matchAll(/M(-?[\d.]+),/g)) barXs.push(Number(m[1]));
-    }
-    nodes.set(b.id, { id: b.id, cx, cy, shapeClass: shape, label: textOf(b.inner), fill, stroke, shapeCount,
-      bbox: { x: cx + local.x, y: cy + local.y, width: local.width, height: local.height },
-      ...(polyTag ? { polygon: parsePoints(attr(polyTag, "points") ?? "") } : {}),
-      radii: [...b.inner.matchAll(/<circle\b[^>]*>/g)].map((x) => num(attr(x[0], "r"))),
-      ...(arc ? { arcRy: Math.abs(Number(arc[2])) } : {}),
-      barXs });
+    const node = nodeGeometry(b);
+    if (node) nodes.set(b.id, node);
   }
   const edges = new Map<string, EdgeGeometry>();
   for (const b of gBlocks(svg, "pele-edge")) {

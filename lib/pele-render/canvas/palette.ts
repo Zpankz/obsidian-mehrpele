@@ -16,6 +16,7 @@
  * as its fallback stroke and recognised by that exact value on the way back.
  * Pure: no Pele, no DOM.
  */
+import { cmp } from "./util.js";
 
 export interface PresetColour {
   /** Canvas preset id ("1"…"6"). */
@@ -82,7 +83,7 @@ export function tintStyles(hex: string): string[] {
 export function presetClassDefs(ids: Iterable<string>): string[] {
   return [...new Set(ids)]
     .filter(isPreset)
-    .sort()
+    .sort(cmp)
     .map((id) => `classDef ${presetClass(id)} ${tintStyles(presetHex(id)!).join(",")}`);
 }
 

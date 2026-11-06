@@ -98,6 +98,7 @@ const NO_CONTROL: Record<string, string> = {
   "features.repair.jev.binPath": "CLI transport state; no consumer",
   "features.repair.jev.binConfirmed": "security state written by the binary confirmation, never by hand",
   "features.excalidraw.palette": "set by the Excalidraw conversion; no legacy control",
+  "features.view-nodes.allowedSchemes": "a rendered text row, so the field can show the effective list on blur",
 };
 
 describe("coverage", () => {
@@ -137,6 +138,43 @@ describe("coverage", () => {
     writeControl(v3, "features.nested.maxDepth", "5");
     expect(v3.features.nested.maxDepth).toBe(5);
     expect(() => writeControl(v3, "features.nope.enabled", true)).toThrow("Unknown setting");
+  });
+});
+
+describe("depth and scheme fields", () => {
+  test("the two depth controls step by whole levels", () => {
+    const defs = D.buildDefinitions(fakeCtx({ v3: everythingOn() }).ctx);
+    for (const key of ["features.nested.maxDepth", "features.canvas.portalDepth"]) {
+      expect({ key, step: byKey(defs, key).control.step }).toEqual({ key, step: 1 });
+    }
+  });
+
+  test("the schemes field states the fallback and shows the effective list once it loses focus", () => {
+    const { ctx, v3 } = fakeCtx({ v3: everythingOn() });
+    const row = byName(D.buildDefinitions(ctx), "Allowed URL schemes");
+    expect(row.desc).toContain("empty means https, http");
+    const input = { value: "", blur: null as (() => void) | null };
+    let change: ((v: string) => unknown) | null = null;
+    const t = {
+      inputEl: { addEventListener: (type: string, fn: () => void) => void (type === "blur" && (input.blur = fn)) },
+      setPlaceholder: () => t,
+      setValue: (v: string) => ((input.value = v), t),
+      onChange: (fn: (v: string) => unknown) => ((change = fn), t),
+    };
+    row.render({ addText: (cb: (c: typeof t) => void) => cb(t) });
+    expect(input.value).toBe("https, http");
+    // Typing saves as it goes; an emptied list falls back once normalized.
+    input.value = "";
+    change!("");
+    schema.normalizeInPlace(v3);
+    expect(v3.features["view-nodes"].allowedSchemes).toEqual(["https", "http"]);
+    expect(input.value).toBe("");
+    input.blur!();
+    expect(input.value).toBe("https, http");
+    change!("HTTPS, javascript, ftp");
+    schema.normalizeInPlace(v3);
+    input.blur!();
+    expect(input.value).toBe("https, ftp");
   });
 });
 
@@ -239,6 +277,7 @@ function fakeSetting() {
     addButton(cb: (b: unknown) => void) {
       const entry = { text: "", click: () => undefined as unknown };
       const b = {
+        buttonEl: { setAttribute() {}, removeAttribute() {} },
         setButtonText: (t: string) => ((entry.text = t), b),
         onClick: (fn: () => unknown) => ((entry.click = fn), b),
       };
@@ -250,11 +289,64 @@ function fakeSetting() {
   return s;
 }
 
+test("Flows actions use live state and preserve the same button through enable", async () => {
+  const { ctx, runs } = fakeCtx();
+  let state: import("../src/features/companions").FlowStatus = { kind: "missing", label: "Not installed", detail: "Missing." };
+  ctx.flows = () => state;
+  let repaint = () => {};
+  ctx.watchFlows = (_el, paint) => { repaint = paint; };
+  const page = D.flowsPage(ctx);
+  const row = (page.items as Node[])[0]!;
+  const setting = fakeSetting();
+  row.render(setting);
+  const button = setting.buttons[0]!;
+  expect(button.text).toBe("Install");
+  await button.click();
+  expect(runs).toEqual(["openPluginPage"]);
+  state = { ...state, kind: "disabled", label: "Installed, disabled" }; repaint();
+  expect(button.text).toBe("Enable");
+  let release = () => {};
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  let enables = 0;
+  ctx.run = { ...ctx.run, enablePlugin: async () => { enables++; await waiting; }, openPluginPage: () => void runs.push("openPluginPage"), openPluginSettings: () => void runs.push("openPluginSettings"), updateHost: () => void runs.push("updateHost") } as TabContext["run"];
+  const enabling = button.click();
+  await button.click();
+  expect(enables).toBe(1);
+  state = { ...state, kind: "ready", label: "Ready" };
+  release(); await enabling;
+  expect(setting.buttons).toEqual([button]);
+  expect(button.text).toBe("Open settings");
+  await button.click();
+  expect(runs.at(-1)).toBe("openPluginSettings");
+  state = { ...state, kind: "update-needed", label: "Update needed", updateTarget: "host" }; repaint();
+  await button.click();
+  expect(runs.at(-1)).toBe("updateHost");
+});
+
+test("Flows update routes disconnected companions to instructions and known API mismatches to the host", async () => {
+  const { detectFlows, FLOWS } = await import("../src/features/companions");
+  const pm = { manifests: { [FLOWS.id]: { version: "0.0.1" } }, enabledPlugins: new Set([FLOWS.id]) };
+  let state = detectFlows(pm, 1);
+  const { ctx } = fakeCtx();
+  ctx.flows = () => state;
+  const calls: string[] = [];
+  ctx.run = { ...ctx.run, openPluginPage: id => { calls.push(`plugin:${id}`); }, updateHost: () => { calls.push("host"); } } as TabContext["run"];
+  const setting = fakeSetting();
+  (D.flowsPage(ctx).items as Node[])[0]!.render(setting);
+  await setting.buttons[0]!.click();
+  expect(calls).toEqual([`plugin:${FLOWS.id}`]);
+  state = detectFlows(pm, 0);
+  await setting.buttons[0]!.click();
+  state = detectFlows(pm, 1, { version: "0.1.0", requiredHostMinor: 2 });
+  await setting.buttons[0]!.click();
+  expect(calls).toEqual([`plugin:${FLOWS.id}`, "host", "host"]);
+});
+
 describe("copy rules", () => {
   /** Capitalised words allowed after the first: product, plugin and format names. */
   const PROPER = new Set([
     "Pele", "Mehrpele", "Mermaid", "Markdown", "Canvas", "Excalidraw", "Bases", "Gantt", "Graph", "Jev", "Ollama",
-    "Obsidian", "Lucide", "Datacore", "Breadcrumbs", "TaskNotes",
+    "Obsidian", "Lucide", "Datacore", "Breadcrumbs", "TaskNotes", "Flows",
   ]);
   const BADGE = / (Desktop only|Needs [^.]+)\.$/;
 
@@ -305,7 +397,7 @@ describe("visible chains", () => {
     const chains: [string, (on: boolean) => void][] = [
       ["features.live-view.maxEmbedWidth", (on) => void (v3.features["live-view"].embeds = on)],
       ["features.live-view.maxEmbedHeight", (on) => void (v3.features["live-view"].embeds = on)],
-      ["features.view-nodes.allowedSchemes", (on) => void (v3.features["view-nodes"].webEnabled = on)],
+      ["Allowed URL schemes", (on) => void (v3.features["view-nodes"].webEnabled = on)],
       ["features.repair.jev.keySecretId", (on) => void (v3.features.repair.jev.enabled = on)],
       ["features.repair.jev.baseUrl", (on) => void (v3.features.repair.jev.enabled = on)],
       ["features.repair.jev.model", (on) => void (v3.features.repair.jev.enabled = on)],
@@ -320,7 +412,7 @@ describe("visible chains", () => {
       ["llm.anthropicKeySecretId", (on) => void (v3.llm.provider = on ? "anthropic" : "openai")],
     ];
     for (const [key, setOn] of chains) {
-      const n = byKey(defs, key);
+      const n = key.includes(".") ? byKey(defs, key) : byName(defs, key);
       setOn(false);
       expect({ key, shown: shown(defs, n) }).toEqual({ key, shown: false });
       setOn(true);

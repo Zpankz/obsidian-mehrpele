@@ -2,7 +2,8 @@
  * Per-node sizing: `%% pele-size A=220x96 C=150 "Make tea"=x72 %%`.
  * Directive helpers (pure), the sizable-node table and lint for `check`.
  */
-import { detectType, parse } from "../pele.js";
+import { parse } from "../pele.js";
+import { detectTypeOrNull } from "../detect.js";
 import { mehrpeleRenderSource } from "../mehrpele.js";
 import { sizableNodes, SIZABLE_TYPES, type SizeCaps } from "./adapters.js";
 import { lintSizeDirective, withNodeSize, type NodeSize } from "./directive.js";
@@ -41,8 +42,8 @@ export function supportsNodeSizes(type: string | null | undefined): boolean {
  */
 export function nodeSizeCaps(source: string): Map<string, SizeCaps> | null {
   const capsOf = (src: string): Map<string, SizeCaps> | null => {
-    const model = parse(src) as unknown as { type?: string };
-    if (!supportsNodeSizes(model?.type)) return null;
+    const model = parse(src);
+    if (!supportsNodeSizes(model.type)) return null;
     const out = new Map<string, SizeCaps>();
     for (const [id, n] of sizableNodes(model)) out.set(id, n.caps);
     return out;
@@ -84,12 +85,7 @@ export function lintNodeSizes(source: string): NodeSizeWarning[] {
   for (const raw of lint.malformed) {
     out.push({ code: "malformed-entry", message: `pele-size: cannot read entry "${raw}" (use id=W, id=WxH or id=xH)` });
   }
-  let type: string | null = null;
-  try {
-    type = detectType(source);
-  } catch {
-    type = null;
-  }
+  const type = detectTypeOrNull(source);
   if (!supportsNodeSizes(type)) {
     out.push({
       code: "unsupported-type",
@@ -97,7 +93,7 @@ export function lintNodeSizes(source: string): NodeSizeWarning[] {
     });
     return out;
   }
-  let model: unknown;
+  let model: ReturnType<typeof parse>;
   try {
     model = parse(source);
   } catch {
@@ -109,14 +105,9 @@ export function lintNodeSizes(source: string): NodeSizeWarning[] {
   } catch {
     return out;
   }
+  // Every node id the SVG would carry, sizable or not (for a precise message).
   const known = new Set<string>();
-  try {
-    // Every node id the SVG would carry, sizable or not (for a precise message).
-    const m = model as { nodes?: Map<string, unknown> };
-    if (m.nodes instanceof Map) for (const k of m.nodes.keys()) known.add(String(k));
-  } catch {
-    /* other model shapes */
-  }
+  if ("nodes" in model && model.nodes instanceof Map) for (const k of model.nodes.keys()) known.add(String(k));
   for (const [id] of lint.sizes) {
     if (nodes.has(id)) continue;
     if (known.has(id)) out.push({ code: "not-sizable", id, message: `pele-size: node "${id}" has a fixed size; entry ignored` });

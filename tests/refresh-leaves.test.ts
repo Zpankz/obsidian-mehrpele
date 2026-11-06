@@ -9,7 +9,8 @@ import { obsidianStub } from "./helpers/obsidian-stub";
 
 mock.module("obsidian", () => obsidianStub);
 
-const { refreshLeaves } = await import("../src/refresh-leaves");
+const { overrideMermaidOf, refreshLeaves } = await import("../src/refresh-leaves");
+const { PLUGIN_ID } = await import("../src/plugin-id");
 const { LpTakeover } = await import("../src/lp-patch");
 
 const NOTE = "# Note\n\n```pele-breadcrumbs\nnode: here\n```\n";
@@ -113,5 +114,19 @@ describe("LpTakeover.clearStaleWidgetCaches", () => {
     const { take, widgets, view } = setup();
     expect(take.clearStaleWidgetCaches(view)).toBe(0);
     expect(widgets.every((w) => w.containerEl)).toBe(true);
+  });
+});
+
+describe("overrideMermaidOf", () => {
+  const appWith = (settings: unknown) => ({ plugins: { plugins: { [PLUGIN_ID]: { settings } } } }) as never;
+
+  test("follows core.overrideMermaid of the loaded plugin", () => {
+    expect(overrideMermaidOf(appWith({ core: { overrideMermaid: false } }))).toBe(false);
+    expect(overrideMermaidOf(appWith({ core: { overrideMermaid: true } }))).toBe(true);
+  });
+
+  test("defaults to on when the plugin or its settings are not loaded", () => {
+    expect(overrideMermaidOf({} as never)).toBe(true);
+    expect(overrideMermaidOf(appWith(undefined))).toBe(true);
   });
 });

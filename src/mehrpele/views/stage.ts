@@ -587,7 +587,8 @@ export class ViewHub {
     const t = e.target instanceof Document ? e.target.scrollingElement : (e.target as Element | null);
     if (t instanceof Element) this.scrolls.set(t, { top: t.scrollTop, left: t.scrollLeft });
   };
-  private onKey = (e: KeyboardEvent): void => {
+  /** Capture Tab before focus enters a dock, including from a popout panel header. */
+  onKeyNavigation = (e: KeyboardEvent): void => {
     if (e.key === "Tab") this.lastKeyNav = performance.now();
   };
   /**
@@ -624,7 +625,7 @@ export class ViewHub {
       { rootMargin: "300px 0px 300px 0px" },
     );
     document.addEventListener("scroll", this.onScroll, { capture: true, passive: true });
-    document.addEventListener("keydown", this.onKey, { capture: true });
+    document.addEventListener("keydown", this.onKeyNavigation, { capture: true });
     document.addEventListener("pointerdown", this.onDown, { capture: true });
     window.addEventListener("pointerup", this.onUp, { capture: true });
     window.addEventListener("pointercancel", this.onUp, { capture: true });
@@ -739,7 +740,7 @@ export class ViewHub {
   destroy(): void {
     this.destroyed = true;
     document.removeEventListener("scroll", this.onScroll, { capture: true });
-    document.removeEventListener("keydown", this.onKey, { capture: true });
+    document.removeEventListener("keydown", this.onKeyNavigation, { capture: true });
     document.removeEventListener("pointerdown", this.onDown, { capture: true });
     window.removeEventListener("pointerup", this.onUp, { capture: true });
     window.removeEventListener("pointercancel", this.onUp, { capture: true });

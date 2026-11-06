@@ -96,10 +96,11 @@ export function lpTakeoverOf(app: App): LpTakeover | null {
   return plugin?.lp ?? null;
 }
 
+/** Whether Pele renders `mermaid` fences (`core.overrideMermaid`; on unless the loaded plugin says off). */
 export function overrideMermaidOf(app: App): boolean {
-  const plugin = (app as unknown as { plugins?: { plugins?: Record<string, { settings?: { overrideMermaid?: boolean } }> } })
+  const plugin = (app as unknown as { plugins?: { plugins?: Record<string, { settings?: { core?: { overrideMermaid?: boolean } } }> } })
     .plugins?.plugins?.[PLUGIN_ID];
-  return plugin?.settings?.overrideMermaid !== false;
+  return plugin?.settings?.core?.overrideMermaid !== false;
 }
 
 /** Rendered diagram widgets in this editor that still show non-Pele (native) DOM. */

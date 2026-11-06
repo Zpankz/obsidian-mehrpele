@@ -14,7 +14,7 @@
     "build": "node esbuild.config.mjs production",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "lint": "eslint ."
+    "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
     "monkey-around": "3.0.0",

@@ -63,7 +63,7 @@ describe("full-bleed nodes", () => {
     const label = extractLabels(source).find((l) => l.anchorId === "N")!;
     const reserved = [buildPlaceholder(label, bleedReservation(content, user.get("N")), 16, 0)];
     const entries = withBleedEntries(user, new Map([["N", content]])) ?? user;
-    const src = withSizeDirective(placeholderSource(source, reserved, 16), entries);
+    const src = withSizeDirective(placeholderSource(source, reserved), entries);
     const box = nodeBoxMap(render(src, { measurer: makeReservationMeasurer(reserved) }).svg).get("N")!;
     expect(Math.abs(box.w - 140)).toBeLessThanOrEqual(2);
     expect(Math.abs(box.h - 96)).toBeLessThanOrEqual(12); // height moves on Pele's line grid
@@ -82,7 +82,7 @@ describe("full-bleed nodes", () => {
     const plan = bleedPlaceholder(content, caps, user.get("N"));
     const reserved = [buildPlaceholder(label, plan.size, 16, 0)];
     const entries = plan.box ? withBleedEntries(user, new Map([["N", content]])) ?? user : user;
-    const src = withSizeDirective(placeholderSource(source, reserved, 16), entries);
+    const src = withSizeDirective(placeholderSource(source, reserved), entries);
     return nodeBoxMap(render(src, { measurer: makeReservationMeasurer(reserved) }).svg).get("N")!;
   };
 

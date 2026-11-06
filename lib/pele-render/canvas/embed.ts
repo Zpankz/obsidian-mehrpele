@@ -32,7 +32,7 @@ export function parseEmbedLabel(label: string): EmbedLabel | null {
   const t = label.trim();
   const m = /^(!?)\[\[([^[\]\n]+)\]\]$/.exec(t);
   if (!m) return null;
-  const [target, ...rest] = m[2].split("|");
+  const [target = "", ...rest] = m[2].split("|");
   const after = rest.join("|");
   const hash = target.indexOf("#");
   const file = (hash >= 0 ? target.slice(0, hash) : target).trim();

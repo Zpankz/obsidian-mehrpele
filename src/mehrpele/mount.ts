@@ -7,7 +7,6 @@
  * embed degrades to the plain Pele SVG, never an error.
  */
 import { mount as peleMount, render as peleRender, type Mounted, type RenderOptions, type RenderResult } from "pele-render/pele";
-import { parseViewBox } from "./anchors";
 import { markExternalLinks } from "../core-look";
 import { placeSvg } from "../svg-markup";
 import { extractLabels, stripMehrpeleDirective } from "./extract";
@@ -408,7 +407,7 @@ class MountedImpl implements MehrpeleMounted {
     });
     this.bleedIds = bleedIds;
     this.heldIds = heldIds;
-    let src = placeholderSource(source, reserved, fontSizeOf(this.host));
+    let src = placeholderSource(source, reserved);
     const aspect = new Set(rendered.filter((r) => bleeds.has(r.label.anchorId) && isAspectMode(r.mode)).map((r) => r.label.anchorId));
     const entries = bleeds.size
       ? withBleedEntries(userSizes, bleeds, { aspect: (id) => aspect.has(id), lineHeight: fontSizeOf(this.host) * 1.5 })
@@ -782,7 +781,5 @@ export async function mountMehrpele(
 ): Promise<MehrpeleMounted> {
   const mounted = new MountedImpl(container, source, host);
   await mounted.start();
-  // referenced for hosts that re-anchor overlays in lightboxes
-  void parseViewBox;
   return mounted;
 }

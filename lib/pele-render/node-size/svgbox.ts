@@ -4,6 +4,7 @@
  * nested `translate()` transforms applied. Text is ignored (it never extends
  * a node box). Pure string parsing, so it works in the CLI and the plugin.
  */
+import { decodeEntities } from "../svg/read.js";
 
 export interface Box {
   x: number;
@@ -16,15 +17,6 @@ export interface NodeBox {
   id: string;
   classes: string;
   box: Box | null;
-}
-
-function decode(s: string): string {
-  return s
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
 }
 
 function pathPoints(d: string): number[][] {
@@ -107,7 +99,13 @@ function pathPoints(d: string): number[][] {
   return pts.filter((p) => p.every(Number.isFinite));
 }
 
-function attr(attrs: string, name: string): number | undefined {
+/**
+ * Numeric attribute `name`, or undefined. Not the shared svg/read.ts `attr`:
+ * the `\s` anchor never matches `data-x=` for `x`, and only a numeric value
+ * matches (a later numeric duplicate wins over an earlier non-numeric one),
+ * so swapping it for `num(attr(…))` could change which attribute is read.
+ */
+function numAttr(attrs: string, name: string): number | undefined {
   const m = new RegExp(`\\s${name}="([-\\d.e+]+)"`).exec(attrs);
   return m ? Number(m[1]) : undefined;
 }
@@ -163,44 +161,51 @@ export function shapeBox(inner: string): Box | null {
     }
     if (close) continue;
     if (/class="[^"]*pele-marker/.test(attrs)) continue;
-    const add = (x: number, y: number): void => {
+    for (const [x, y] of shapePoints(tag, attrs)) {
       x0 = Math.min(x0, x + ox);
       y0 = Math.min(y0, y + oy);
       x1 = Math.max(x1, x + ox);
       y1 = Math.max(y1, y + oy);
-    };
-    if (tag === "rect") {
-      const x = attr(attrs, "x") ?? 0;
-      const y = attr(attrs, "y") ?? 0;
-      add(x, y);
-      add(x + (attr(attrs, "width") ?? 0), y + (attr(attrs, "height") ?? 0));
-    } else if (tag === "circle") {
-      const cx = attr(attrs, "cx") ?? 0;
-      const cy = attr(attrs, "cy") ?? 0;
-      const r = attr(attrs, "r") ?? 0;
-      add(cx - r, cy - r);
-      add(cx + r, cy + r);
-    } else if (tag === "ellipse") {
-      const cx = attr(attrs, "cx") ?? 0;
-      const cy = attr(attrs, "cy") ?? 0;
-      const rx = attr(attrs, "rx") ?? 0;
-      const ry = attr(attrs, "ry") ?? 0;
-      add(cx - rx, cy - ry);
-      add(cx + rx, cy + ry);
-    } else if (tag === "polygon" || tag === "polyline") {
-      const p = /points="([^"]+)"/.exec(attrs)?.[1] ?? "";
-      const n = p.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/g)?.map(Number) ?? [];
-      for (let i = 0; i + 1 < n.length; i += 2) add(n[i], n[i + 1]);
-    } else if (tag === "path") {
-      const d = /\sd="([^"]+)"/.exec(attrs)?.[1] ?? "";
-      for (const [x, y] of pathPoints(d)) add(x, y);
-    } else if (tag === "line") {
-      add(attr(attrs, "x1") ?? 0, attr(attrs, "y1") ?? 0);
-      add(attr(attrs, "x2") ?? 0, attr(attrs, "y2") ?? 0);
     }
   }
   if (!Number.isFinite(x0)) return null;
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** Extreme points of one shape element, in its own coordinates. */
+function shapePoints(tag: string, attrs: string): [number, number][] {
+  const n = (name: string): number => numAttr(attrs, name) ?? 0;
+  if (tag === "rect") {
+    const x = n("x");
+    const y = n("y");
+    return [[x, y], [x + n("width"), y + n("height")]];
+  }
+  if (tag === "circle") {
+    const cx = n("cx");
+    const cy = n("cy");
+    const r = n("r");
+    return [[cx - r, cy - r], [cx + r, cy + r]];
+  }
+  if (tag === "ellipse") {
+    const cx = n("cx");
+    const cy = n("cy");
+    const rx = n("rx");
+    const ry = n("ry");
+    return [[cx - rx, cy - ry], [cx + rx, cy + ry]];
+  }
+  if (tag === "polygon" || tag === "polyline") {
+    const p = /points="([^"]+)"/.exec(attrs)?.[1] ?? "";
+    const v = p.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/g)?.map(Number) ?? [];
+    const out: [number, number][] = [];
+    for (let i = 0; i + 1 < v.length; i += 2) out.push([v[i], v[i + 1]]);
+    return out;
+  }
+  if (tag === "path") {
+    const d = /\sd="([^"]+)"/.exec(attrs)?.[1] ?? "";
+    return pathPoints(d).map(([x, y]) => [x, y]);
+  }
+  if (tag === "line") return [[n("x1"), n("y1")], [n("x2"), n("y2")]];
+  return [];
 }
 
 /** Every `.pele-node[data-id]` group with its box (sequence actors appear twice). */
@@ -214,7 +219,7 @@ export function nodeBoxes(svg: string): NodeBox[] {
     const g = groupAt(svg, m.index);
     const [tx, ty] = translate(m[0]);
     const b = shapeBox(g);
-    out.push({ id: decode(id), classes: m[1], box: b ? { x: b.x + tx, y: b.y + ty, w: b.w, h: b.h } : null });
+    out.push({ id: decodeEntities(id), classes: m[1], box: b ? { x: b.x + tx, y: b.y + ty, w: b.w, h: b.h } : null });
   }
   // Plain mindmap leaves draw text only: their box comes from the layout.
   if (out.some((n) => !n.box && /\bpele-shape-text\b/.test(n.classes)) && /<svg\b[^>]*\bpele-mindmap\b/.test(svg)) {
@@ -266,7 +271,7 @@ export function mindmapTextBoxes(svg: string): Map<string, Box> {
       // Baselines sit 0.35 em below each line's centre; lines are 1.5 em apart.
       const step = ys.length > 1 ? (ys[ys.length - 1] - ys[0]) / (ys.length - 1) : ys.length === 1 && ys[0] > 0 ? (ys[0] / 0.35) * 1.5 : 24;
       const h = Math.max(1, ys.length) * step;
-      out.set(decode(id), { x: tx - half, y: ty - h / 2, w: 2 * half, h });
+      out.set(decodeEntities(id), { x: tx - half, y: ty - h / 2, w: 2 * half, h });
     }
   }
   return out;

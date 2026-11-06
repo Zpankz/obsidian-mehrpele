@@ -14,6 +14,7 @@
  * Ids are bare when they match BARE_ID, otherwise JSON-quoted. Several lines
  * merge; the last occurrence of a key wins. Pure: no Pele, no DOM.
  */
+import { parseId, quoteId } from "../directive/id.js";
 
 export type Side = "top" | "right" | "bottom" | "left";
 export const SIDES: readonly Side[] = ["top", "right", "bottom", "left"];
@@ -48,24 +49,9 @@ export const POS_DIRECTIVE_RE = /^[ \t]*%%[ \t]*pele-pos\b(.*?)%%[ \t]*$/gm;
 const LINE_RE = /^[ \t]*%%[ \t]*pele-(?:layout|pos)\b.*$/;
 const ID = String.raw`"(?:[^"\\]|\\.)*"|[^\s=>#"]+`;
 const ENTRY_RE = new RegExp(String.raw`(${ID})(?:>(${ID})(?:#(\d+))?)?=(\S*)`, "g");
-const BARE_ID = /^[\p{L}\p{N}_.:-]+$/u;
 const NUM = /^-?\d+(?:\.\d+)?$/;
 /** Largest accepted coordinate magnitude (SVG units). */
 export const MAX_COORD = 1_000_000;
-
-export function quotePosId(id: string): string {
-  return BARE_ID.test(id) ? id : JSON.stringify(id);
-}
-
-function parseId(raw: string): string | null {
-  if (!raw.startsWith('"')) return raw;
-  try {
-    const v = JSON.parse(raw) as unknown;
-    return typeof v === "string" && v ? v : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Key of the n-th (1-based) edge between `from` and `to`. */
 export function edgeKey(from: string, to: string, n = 1): string {
@@ -164,13 +150,13 @@ export function formatPosDirective(pos: Iterable<[string, PinnedBox]>, ports: It
   const parts: string[] = [];
   for (const [id, b] of pos) {
     const v = [b.x, b.y, ...(b.w !== undefined && b.h !== undefined ? [b.w, b.h] : [])].map(fmtNum).join(",");
-    parts.push(`${quotePosId(id)}=${v}`);
+    parts.push(`${quoteId(id)}=${v}`);
   }
   for (const [key, p] of ports) {
     if (!p.from && !p.to) continue;
     const m = /^(.*)>(.*?)(?:#(\d+))?$/.exec(key);
     if (!m) continue;
-    const k = `${quotePosId(m[1])}>${quotePosId(m[2])}${m[3] ? `#${m[3]}` : ""}`;
+    const k = `${quoteId(m[1])}>${quoteId(m[2])}${m[3] ? `#${m[3]}` : ""}`;
     parts.push(`${k}=${p.from ?? "auto"},${p.to ?? "auto"}`);
   }
   return parts.length ? `%% pele-pos ${parts.join(" ")} %%` : "";

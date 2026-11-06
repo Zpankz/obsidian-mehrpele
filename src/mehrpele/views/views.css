@@ -314,6 +314,11 @@ body.is-grabbing .mehrpele-view-dock :is(webview, iframe) {
   background-color: var(--background-modifier-hover);
 }
 
+.mehrpele-view-attach-btn:focus-visible {
+  color: var(--text-normal);
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
 .mehrpele-view-attach-icon {
   --icon-size: var(--icon-xs);
   display: inline-flex;

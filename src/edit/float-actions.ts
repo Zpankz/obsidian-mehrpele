@@ -11,24 +11,20 @@
  * happen with no pointerleave, e.g. a tab moving to another note.
  */
 import { Platform } from "obsidian";
+import { actionBarOwners, floatedActionBars as floated } from "../action-bar-location";
+export { actionBarOf } from "../action-bar-location";
 import { floatBarBox, intersect, isClipped, isEmpty, type Rect } from "./float-geometry";
 
 const LEAVE_MS = 150;
 /** How often a floated bar re-checks its frame (only while floated). */
 const WATCH_MS = 250;
 
-const floated = new WeakMap<HTMLElement, HTMLElement>();
 /** Anchor checks of the bars floated now. */
 const live = new Set<() => void>();
 
 /** Put back every floated bar whose frame is no longer where it was (workspace changes call this). */
 export function sweepFloatingActions(): void {
   for (const check of [...live]) check();
-}
-
-/** The frame's action bar, wherever it is shown (in the frame or floated). */
-export function actionBarOf(root: HTMLElement): HTMLElement | null {
-  return floated.get(root) ?? root.querySelector<HTMLElement>(":scope > .embed-actions");
 }
 
 const rectOf = (r: DOMRect): Rect => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
@@ -75,6 +71,7 @@ export function attachFloatingActions(root: HTMLElement): () => void {
     else bar.remove();
     layer.remove();
     floated.delete(root);
+    actionBarOwners.delete(bar);
     layer = mark = bar = null;
   };
   /** Restore unless the frame is still shown, in the layer's window, where the bar was placed. */
@@ -124,6 +121,7 @@ export function attachFloatingActions(root: HTMLElement): () => void {
     layer.addEventListener("pointerenter", cancel);
     layer.addEventListener("pointerleave", leave);
     floated.set(root, b);
+    actionBarOwners.set(b, root);
     win.addEventListener("scroll", onScroll, true);
     win.addEventListener("resize", restore);
     win.addEventListener("blur", restore);

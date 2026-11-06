@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { extractBlocks, blockAtLine, diagramIndexOf, drawingPathFor, drawingPathError, nestedDiagramSources, parseIndex } from "../../src/excalidraw/extract";
-import { resolvePalette, cliResultJson, PELE_VARS } from "../../src/excalidraw/palette";
+import { resolvePalette, PELE_VARS } from "../../src/excalidraw/palette";
+import { cliResultJson } from "../../src/excalidraw/result";
 import { excalidrawState, excalidrawStatus, versionAtLeast } from "../../src/excalidraw/ea";
 import { peleToExcalidraw } from "pele-render/excalidraw";
 

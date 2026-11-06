@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeFetchLike, type RequestUrlLike } from "../src/repair-fetch";
+import { makeFetchLike, type RequestUrlLike } from "../src/repair/fetch";
 import { DEFAULT_REPAIR_SETTINGS, enabledTiers, repairNeedsReview, toRepairOptions } from "../src/repair-settings";
 import { replaceBlockBody } from "../src/replace-block";
 

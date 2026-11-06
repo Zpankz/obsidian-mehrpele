@@ -3,9 +3,10 @@
  * the embed renderer (web / PDF / view: labels), the attached-view layer
  * (`%% pele-view %%`), the "Remove stale node views" command and teardown.
  */
-import { Notice, type Editor, type Plugin } from "obsidian";
+import { Component, Notice, type Editor, type Plugin } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import { AttachedViewsLayer, type DiagramResolver } from "./attach";
+import { watchViewDocuments } from "./documents";
 import { pruneNoteViews } from "./plugin-pure";
 import { registerViewNodeRenderer } from "./renderer";
 import type { ViewNodeSettings } from "./settings";
@@ -29,13 +30,29 @@ export function installViewNodes(
   // Off then on again: the old renderer (destroyed hub) must not match first.
   plugin.register(unregister);
   const attached = new AttachedViewsLayer(host, hub, opts.resolveDiagram);
-  plugin.registerDomEvent(document, "pointermove", attached.onPointerMove, { passive: true });
-  plugin.registerDomEvent(document, "keydown", attached.onKeyDown);
+  watchViewDocuments(plugin, (doc) => {
+    const child = plugin.addChild(new Component());
+    child.registerDomEvent(doc, "pointermove", attached.onPointerMove, { passive: true });
+    child.registerDomEvent(doc, "keydown", attached.onKeyDown);
+    if (doc !== document) child.registerDomEvent(doc, "keydown", hub.onKeyNavigation, { capture: true });
+    child.registerDomEvent(doc, "focusin", attached.onFocusIn);
+    return () => { plugin.removeChild(child); };
+  });
   plugin.registerEvent(plugin.app.workspace.on("layout-change", attached.onWorkspaceChange));
   plugin.registerEvent(plugin.app.workspace.on("active-leaf-change", attached.onWorkspaceChange));
   plugin.register(() => {
     attached.destroy();
     hub.destroy();
+  });
+  plugin.addCommand({
+    id: "show-attached-views",
+    name: "Show attached views",
+    checkCallback: (checking) => {
+      const target = attached.keyboardTarget();
+      if (!target) return false;
+      if (!checking) attached.openFromKeyboard(target);
+      return true;
+    },
   });
   plugin.addCommand({
     id: "prune-node-views",

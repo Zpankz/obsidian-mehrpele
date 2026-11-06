@@ -4,7 +4,7 @@ import { mehrpeleCheckSource, mehrpeleRenderSource, validateMehrpele } from "../
 import { clampResize } from "../../src/mehrpele/node-resize";
 import { decideRemeasure } from "../../src/mehrpele/remeasure";
 import { DEFAULT_MEHRPELE_SETTINGS, normalizeMehrpeleSettings } from "../../src/mehrpele/settings";
-import { buildCheckSummary, diagramRenderSource } from "../../src/cli-handlers";
+import { buildCheckSummary, diagramRenderSource } from "../../src/cli/check";
 
 const NESTED = [
   "flowchart LR",

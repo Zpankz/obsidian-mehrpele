@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { bundleMain } from "./helpers/bundle";
-import { deep, obsidianStub } from "./helpers/obsidian-stub";
+import { deep, obsidianStub, Notice } from "./helpers/obsidian-stub";
 import { defaultSettingsV3, setEnabledV3, TOGGLE_IDS } from "../src/settings/schema";
 
 const g = globalThis as typeof globalThis & { __peleData?: unknown };
@@ -53,6 +53,27 @@ function allOn(): unknown {
 }
 
 describe("settings tab in the plugin", () => {
+  test("private settings hooks preserve their receiver and fail with a useful manual route", async () => {
+    const { plugin, tab } = await loadPlugin(null);
+    const calls: string[] = [];
+    const setting = {
+      open() { expect(this).toBe(setting); calls.push("open"); },
+      openTabById(id: string) { expect(this).toBe(setting); calls.push(id); },
+    };
+    tab.getSettingDefinitions();
+    tab.app = { setting };
+    tab.getElementForDefinition = () => { throw new Error("Private hook changed"); };
+    const notices = Notice.shown;
+    const before = notices.length;
+    expect(() => tab.openFlows()).not.toThrow();
+    expect(calls).toEqual(["open", "mehrpele"]);
+    expect(notices.slice(before)).toContain("Mehrpele: open add-ons → flows.");
+    tab.app = {};
+    expect(tab.openPluginSettings("mehrpele-cannoli")).toBe(false);
+    await expect(tab.enableAddon("mehrpele-cannoli")).resolves.toBeUndefined();
+    expect(notices.at(-1)).toContain("Community plugins");
+    plugin.unload();
+  });
   test("one tab, with definitions built from the live settings", async () => {
     const { plugin, tab } = await loadPlugin(null);
     expect(plugin.calls.filter(([m]: [string]) => m === "addSettingTab")).toHaveLength(1);
@@ -117,6 +138,18 @@ describe("settings tab in the plugin", () => {
     plugin.unload();
   });
 
+  test("hint changes refresh only add-on hints, without rebuilding existing diagrams", async () => {
+    const { plugin, tab } = await loadPlugin(null);
+    let refreshes = 0, redraws = 0;
+    plugin.refreshAddonHints = () => refreshes++;
+    plugin.refreshLiveMounts = () => redraws++;
+    await tab.setControlValue("core.showAddonHints", false);
+    expect(plugin.settings.core.showAddonHints).toBe(false);
+    expect(refreshes).toBe(1);
+    expect(redraws).toBe(0);
+    plugin.unload();
+  });
+
   test("an integration toggle re-renders open notes, so rendered blocks follow it (no reload)", async () => {
     const { plugin, tab } = await loadPlugin(allOn());
     const rerenders: unknown[] = [];
@@ -132,6 +165,18 @@ describe("settings tab in the plugin", () => {
     expect(plugin.features.pendingReload.size).toBe(0);
     await tab.setControlValue("features.integrations.maxNodes", 50);
     expect(rerenders).toHaveLength(6);
+    plugin.unload();
+  });
+
+  test("a number the schema rounds or clamps rebuilds the tab, so the field shows the stored value", async () => {
+    const { plugin, tab } = await loadPlugin(allOn());
+    const u0 = tab.updates;
+    await tab.setControlValue("features.nested.maxDepth", 2.5);
+    expect(tab.getControlValue("features.nested.maxDepth")).toBe(3);
+    expect(tab.updates).toBe(u0 + 1);
+    await tab.setControlValue("features.canvas.portalDepth", 4);
+    expect(tab.getControlValue("features.canvas.portalDepth")).toBe(4);
+    expect(tab.updates).toBe(u0 + 1);
     plugin.unload();
   });
 

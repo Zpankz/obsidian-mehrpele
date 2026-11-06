@@ -22,6 +22,7 @@ export interface SettingsV3 {
     overrideMermaid: boolean;
     iconsEnabled: boolean;
     ganttToday: boolean;
+    showAddonHints: boolean;
     appearance: { maxWidth: number; fontFamily: string; fontSize: number };
     security: {
       allowLinks: boolean;
@@ -133,6 +134,7 @@ export function defaultSettingsV3(): SettingsV3 {
       overrideMermaid: true,
       iconsEnabled: true,
       ganttToday: true,
+      showAddonHints: true,
       appearance: { maxWidth: 0, fontFamily: "", fontSize: 0 },
       security: { allowLinks: true, allowCommandUris: false, commandAllowlist: [], allowRemoteImages: false, sanitize: true },
       advanced: { maxSourceLength: 0, defaultConfigJson: "" },
@@ -224,6 +226,7 @@ export function normalizeV3(raw: unknown): SettingsV3 {
       overrideMermaid: bool(core.overrideMermaid, d.core.overrideMermaid),
       iconsEnabled: bool(core.iconsEnabled, d.core.iconsEnabled),
       ganttToday: bool(core.ganttToday, d.core.ganttToday),
+      showAddonHints: bool(core.showAddonHints, d.core.showAddonHints),
       appearance: {
         maxWidth: nonNeg(app.maxWidth, d.core.appearance.maxWidth),
         fontFamily: str(app.fontFamily, d.core.appearance.fontFamily),
@@ -266,8 +269,7 @@ export function normalizeV3(raw: unknown): SettingsV3 {
       },
       nested: {
         enabled: on(nested, false),
-        maxDepth: finite(nested.maxDepth) && Number.isInteger(nested.maxDepth) && nested.maxDepth >= 0
-          ? Math.min(nested.maxDepth, 8) : d.features.nested.maxDepth,
+        maxDepth: clamp(nested.maxDepth, 0, 8, d.features.nested.maxDepth, true),
       },
       bases: { enabled: on(f.bases, false) },
       "view-nodes": {

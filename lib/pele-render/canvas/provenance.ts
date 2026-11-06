@@ -19,7 +19,8 @@
  * - meta: the canvas `metadata` (minus `pele`), e.g. frontmatter.
  * Schema 1 (older files) has nodes/groups with x/y/w/h/canvasId only.
  */
-import type { Side } from "./layout-directive.js";
+import type { Side } from "../layout/directive.js";
+import { cmp } from "./util.js";
 
 export interface ProvBox {
   canvasId: string;
@@ -56,70 +57,37 @@ export interface Provenance {
 
 const LINE_RE = /%%\s*pele-canvas:\s*(\{.*\})\s*%%/;
 
-/** Card/group entry as read from the JSON line (unvalidated). */
-interface RawBox {
-  canvasId?: string | number | null;
-  x?: unknown;
-  y?: unknown;
-  w?: unknown;
-  h?: unknown;
-  width?: unknown;
-  height?: unknown;
-  sig?: unknown;
-  keep?: Record<string, unknown> | null;
-}
+type Rec = Record<string, unknown>;
+/** A non-null object (arrays included, as JSON.parse may give). */
+const isRec = (v: unknown): v is Rec => !!v && typeof v === "object";
 
-/** Edge entry as read from the JSON line (unvalidated). */
-interface RawEdge {
-  id?: unknown;
-  fromSide?: unknown;
-  toSide?: unknown;
-  t?: unknown;
-  e?: unknown;
-  keep?: Record<string, unknown> | null;
-}
-
-/** The JSON line as parsed (unvalidated). */
-interface RawProvenance {
-  schema?: unknown;
-  type?: unknown;
-  direction?: unknown;
-  scale?: unknown;
-  layout?: unknown;
-  sourceHash?: unknown;
-  meta?: Record<string, unknown> | null;
-  nodes?: Record<string, RawBox | null> | null;
-  groups?: Record<string, RawBox | null> | null;
-  edges?: Record<string, RawEdge | null> | null;
-}
-
-function box(v: RawBox | null): ProvBox | null {
-  if (!v || typeof v !== "object") return null;
+function box(v: unknown): ProvBox | null {
+  if (!isRec(v)) return null;
   const x = Number(v.x), y = Number(v.y), w = Number(v.w ?? v.width), h = Number(v.h ?? v.height);
   if (![x, y, w, h].every(Number.isFinite)) return null;
-  const out: ProvBox = { canvasId: String(v.canvasId ?? ""), x, y, w, h };
+  const out: ProvBox = { canvasId: String((v.canvasId as string | number | undefined) ?? ""), x, y, w, h };
   if (typeof v.sig === "string") out.sig = v.sig;
-  if (v.keep && typeof v.keep === "object") out.keep = v.keep;
+  if (isRec(v.keep)) out.keep = v.keep;
   return out;
 }
 
 export function parseProvenance(source: string): Provenance | null {
   const m = LINE_RE.exec(source);
   if (!m) return null;
-  let j: RawProvenance | null;
+  let j: unknown;
   try {
-    j = JSON.parse(m[1]) as RawProvenance | null;
+    j = JSON.parse(m[1]);
   } catch {
     return null;
   }
-  if (!j || typeof j !== "object") return null;
+  if (!isRec(j)) return null;
   const p: Provenance = { schema: Number(j.schema) || 1, nodes: new Map(), groups: new Map(), edges: new Map() };
   if (typeof j.type === "string") p.type = j.type;
   if (typeof j.direction === "string") p.direction = j.direction;
   if (Number(j.scale) > 0) p.scale = Number(j.scale);
   if (typeof j.layout === "string") p.layout = j.layout;
   if (typeof j.sourceHash === "string") p.sourceHash = j.sourceHash;
-  if (j.meta && typeof j.meta === "object") p.meta = j.meta;
+  if (isRec(j.meta)) p.meta = j.meta;
   for (const [k, v] of Object.entries(j.nodes ?? {})) {
     const b = box(v);
     if (b) p.nodes.set(k, b);
@@ -128,15 +96,15 @@ export function parseProvenance(source: string): Provenance | null {
     const b = box(v);
     if (b) p.groups.set(k, b);
   }
-  for (const [k, v] of Object.entries(j.edges ?? {})) {
-    const e = v;
-    if (!e || typeof e !== "object" || typeof e.id !== "string") continue;
+  for (const [k, e] of Object.entries(j.edges ?? {})) {
+    if (!isRec(e) || typeof e.id !== "string") continue;
     const out: ProvEdge = { id: e.id };
+    // Sides are taken as written, not checked against Side.
     if (typeof e.fromSide === "string") out.fromSide = e.fromSide as Side;
     if (typeof e.toSide === "string") out.toSide = e.toSide as Side;
     if (typeof e.t === "string") out.t = e.t;
     if (typeof e.e === "string") out.e = e.e;
-    if (e.keep && typeof e.keep === "object") out.keep = e.keep;
+    if (isRec(e.keep)) out.keep = e.keep;
     p.edges.set(k, out);
   }
   return p;
@@ -146,7 +114,7 @@ function sortKeys(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(sortKeys);
   if (v && typeof v === "object") {
     const out: Record<string, unknown> = {};
-    for (const k of Object.keys(v).sort()) {
+    for (const k of Object.keys(v).sort(cmp)) {
       const x = (v as Record<string, unknown>)[k];
       if (x !== undefined) out[k] = sortKeys(x);
     }

@@ -15,7 +15,7 @@ import {
   toMountOptions
 } from "./settings";
 import type PeleMermaidPlugin from "../main";
-import { repairAndApply } from "./repair-host";
+import { repairAndApply } from "./repair/host";
 import { renderSourceOf } from "./cli/handlers";
 import { dispatchBlockReplace } from "./frame-host";
 
@@ -36,7 +36,7 @@ export async function convertDiagramAtCursor(plugin: PeleMermaidPlugin, editor: 
 
 // -- commands -----------------------------------------------------------
 
-export function diagramUnderCursor(plugin: PeleMermaidPlugin, editor: EditorLike): { code: string; lang: string; index: number } | null {
+export function diagramUnderCursor(editor: EditorLike): { code: string; lang: string; index: number } | null {
   const blocks = extractBlocks(editor.getValue());
   if (blocks.length === 0) return null;
   const cursor = editor.getCursor().line;
@@ -66,7 +66,7 @@ function rawSvgFor(plugin: PeleMermaidPlugin, code: string, sourcePath: string, 
 }
 
 export async function copyDiagramSvg(plugin: PeleMermaidPlugin, editor: EditorLike, sourcePath: string): Promise<void> {
-  const hit = diagramUnderCursor(plugin, editor);
+  const hit = diagramUnderCursor(editor);
   if (!hit) {
     new Notice("Pele: no Mermaid/pele block in this note.");
     return;
@@ -80,7 +80,7 @@ export async function copyDiagramSvg(plugin: PeleMermaidPlugin, editor: EditorLi
 }
 
 export async function exportDiagramSvg(plugin: PeleMermaidPlugin, editor: EditorLike, file: TFile | null): Promise<void> {
-  const hit = diagramUnderCursor(plugin, editor);
+  const hit = diagramUnderCursor(editor);
   if (!hit) {
     new Notice("Pele: no Mermaid/pele block in this note.");
     return;

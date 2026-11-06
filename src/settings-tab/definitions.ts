@@ -9,6 +9,7 @@ import {
   type SettingDefinitionGroup, type SettingDefinitionItem, type SettingDefinitionPage, type SettingGroupItem,
 } from "obsidian";
 import { type Companion, COMPANIONS, companionStatus, detectCompanion, missingCompanion, type PluginManagerLike } from "../features/companions";
+import { detectFlows, FLOWS, type FlowStatus } from "../features/companions";
 import { parseConfigJson } from "../render-policy";
 import type { ToggleId } from "../settings/schema";
 import { FOLDED_CLASS, type FoldState } from "./folds";
@@ -25,6 +26,8 @@ export interface TabContext {
   /** Does turning this feature off need a plugin reload? */
   needsReload(id: ToggleId): boolean;
   plugins(): PluginManagerLike | undefined;
+  flows?(): FlowStatus;
+  watchFlows?(el: HTMLElement, paint: () => void): void;
   folds: FoldState;
   ollamaModels(): string[];
   excalidrawStandsDown(): boolean;
@@ -39,6 +42,8 @@ export interface TabContext {
     openCommunityPlugins(): void;
     openPluginPage(id: string): void;
     enablePlugin(id: string): Promise<void>;
+    openPluginSettings?(id: string): void;
+    updateHost?(): void;
   };
 }
 
@@ -58,7 +63,7 @@ const desktopOnly = (): boolean => Platform.isMobile;
 const badge = (desc: string, b: string): string => `${desc} ${b}.`;
 
 /** The top-level sections that fold. */
-export const SECTIONS = ["appearance", "features", "security", "learn", "advanced"] as const;
+export const SECTIONS = ["appearance", "features", "addons", "security", "learn", "advanced"] as const;
 export type SectionId = (typeof SECTIONS)[number];
 
 // -- small builders -------------------------------------------------------------
@@ -76,8 +81,30 @@ function text(key: string, name: string, desc: string, placeholder = "", extra: 
   return { name, desc, ...rest, control: { type: "text", key, placeholder, ...(disabled ? { disabled } : {}) } };
 }
 
-function num(key: string, name: string, desc: string, min?: number, max?: number, extra: Extra = {}): Def {
-  return { name, desc, ...extra, control: { type: "number", key, min, max } };
+function num(key: string, name: string, desc: string, min?: number, max?: number, extra: Extra & { step?: number } = {}): Def {
+  const { step, ...rest } = extra;
+  return { name, desc, ...rest, control: { type: "number", key, min, max, ...(step ? { step } : {}) } };
+}
+
+/**
+ * A text row for a list the schema can rewrite (an emptied list falls back to
+ * the defaults): it saves as the user types, like a text control, and shows
+ * the stored list once it loses focus.
+ */
+function listText(ctx: TabContext, key: string, name: string, desc: string, placeholder: string, extra: Extra = {}): Def {
+  return {
+    name, desc, ...extra,
+    render: (s: Setting) => {
+      s.addText((t) => {
+        const stored = () => {
+          const v = ctx.value(key);
+          return typeof v === "string" ? v : "";
+        };
+        t.setPlaceholder(placeholder).setValue(stored()).onChange((v) => void ctx.set(key, v));
+        t.inputEl.addEventListener("blur", () => void t.setValue(stored()));
+      });
+    },
+  };
 }
 
 function dropdown(key: string, name: string, desc: string, options: Record<string, string>, extra: Extra = {}): Def {
@@ -269,7 +296,7 @@ const CATEGORIES: readonly Category[] = [
         desc: "A node that embeds a diagram draws that diagram inside itself.",
         aliases: ["nested diagrams", "nesting", "diagram in diagram", "depth"],
         options: () => [
-          num("features.nested.maxDepth", "Deepest nesting", "Diagram levels allowed inside a diagram, from 0 to 8; deeper ones show as a plain label.", 0, 8),
+          num("features.nested.maxDepth", "Deepest nesting", "Diagram levels allowed inside a diagram, from 0 to 8; deeper ones show as a plain label.", 0, 8, { step: 1 }),
         ],
       },
       {
@@ -290,7 +317,7 @@ const CATEGORIES: readonly Category[] = [
             disabled: desktopOnly,
             aliases: ["web", "webview", "browser"],
           }),
-          text("features.view-nodes.allowedSchemes", "Allowed URL schemes", "Comma-separated; obsidian, file, javascript and data are never loaded.", "https, http", {
+          listText(ctx, "features.view-nodes.allowedSchemes", "Allowed URL schemes", "Comma-separated, and empty means https, http; obsidian, file, javascript and data are never loaded.", "https, http", {
             visible: on(ctx, "features.view-nodes.webEnabled"),
           }),
         ],
@@ -334,7 +361,7 @@ const CATEGORIES: readonly Category[] = [
           dropdown("features.canvas.layout", "Canvas layout", "Keep the diagram's positions or lay the canvas out again.", {
             canvas: "Canvas positions", auto: "Automatic layout",
           }),
-          num("features.canvas.portalDepth", "Nesting depth on a canvas", "From 0 to 5.", 0, 5),
+          num("features.canvas.portalDepth", "Nesting depth on a canvas", "From 0 to 5.", 0, 5, { step: 1 }),
           text("features.canvas.outputFolder", "Canvas folder", "Empty puts the canvas next to its note.", "Next to the note"),
         ],
       },
@@ -572,6 +599,50 @@ function featuresList(ctx: TabContext): SettingDefinitionGroup {
 
 // -- the tab --------------------------------------------------------------------------
 
+export function flowsPage(ctx: TabContext): PageDef {
+  const status = () => ctx.flows?.() ?? detectFlows(ctx.plugins(), 1);
+  return {
+    type: "page", name: "Flows", aliases: ["flows", "cannoli", "add-ons"],
+    desc: "Run diagrams with the optional Mehrpele Flows add-on.",
+    displayValue: () => status().label,
+    status: () => status().kind === "ready" ? null : "warning",
+    items: [{
+      name: "Mehrpele Flows", desc: "",
+      render: (s: Setting) => {
+        let busy = false;
+        s.addButton((b) => {
+          const paint = () => {
+            const state = status();
+            s.setDesc(`${state.label} — ${state.detail}`);
+            b.setButtonText(state.kind === "missing" ? "Install" : state.kind === "disabled" ? "Enable" : state.kind === "ready" ? "Open settings" : "Update");
+          };
+          paint();
+          ctx.watchFlows?.(s.settingEl, paint);
+          b.onClick(async () => {
+            if (busy) return;
+            busy = true;
+            b.buttonEl.setAttribute("aria-disabled", "true");
+            try {
+              const state = status();
+              if (state.kind === "missing") ctx.run.openPluginPage(FLOWS.id);
+              else if (state.kind === "disabled") await ctx.run.enablePlugin(FLOWS.id);
+              else if (state.kind === "ready") ctx.run.openPluginSettings?.(FLOWS.id);
+              else if (state.updateTarget === "host") ctx.run.updateHost?.();
+              else ctx.run.openPluginPage(FLOWS.id);
+            } finally { busy = false; b.buttonEl.removeAttribute("aria-disabled"); paint(); }
+          });
+        });
+      },
+    }, {
+      name: "Download size", desc: "The add-on targets a download of about 1.5 MB.",
+    }, {
+      name: "Requires", desc: "Mehrpele API 1.1 or later provides diagram integration.",
+    }, {
+      name: "Network use", desc: "Provider keys, network permissions and run records belong to the add-on.",
+    }],
+  };
+}
+
 export function buildDefinitions(ctx: TabContext): SettingDefinitionItem[] {
   const allowCommands = on(ctx, "core.security.allowCommandUris");
   const anyIntegration = () => ctx.enabled("integrations.breadcrumbs") || ctx.enabled("integrations.datacore") || ctx.enabled("integrations.tasknotes");
@@ -579,6 +650,7 @@ export function buildDefinitions(ctx: TabContext): SettingDefinitionItem[] {
     toggle("core.overrideMermaid", "Render Mermaid blocks with Pele", "Pele draws mermaid code blocks in Reading view and Live Preview; a change takes effect after a plugin reload.", {
       aliases: ["override mermaid", "mermaid", "renderer"],
     }),
+    toggle("core.showAddonHints", "Show add-on hints on diagrams", "Flow diagrams offer help when Mehrpele Flows is missing or unavailable."),
     section(ctx, "appearance", "Appearance", [
       text("core.appearance.fontFamily", "Font", "A CSS font family; empty uses the theme's diagram font.", "var(--font-mermaid)", { aliases: ["font family", "typeface"] }),
       num("core.appearance.fontSize", "Text size", "In pixels; 0 uses the theme size.", 0, undefined, { aliases: ["font size"] }),
@@ -589,6 +661,7 @@ export function buildDefinitions(ctx: TabContext): SettingDefinitionItem[] {
       toggle("core.ganttToday", "Mark today on Gantt charts", "Gantt charts draw a line at today's date.", { aliases: ["gantt", "today line"] }),
     ]),
     featuresList(ctx),
+    section(ctx, "addons", "Add-ons", [flowsPage(ctx)]),
     section(ctx, "security", "Security", [
       toggle("core.security.allowLinks", "Allow links in diagrams", "Clicking a linked node opens its link; off makes every diagram inert.", { aliases: ["links", "link handling"] }),
       toggle("core.security.allowCommandUris", "Allow obsidian:// command links", "A diagram link can run one of the commands you list below.", { aliases: ["command links", "commands", "uri"] }),

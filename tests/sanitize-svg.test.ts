@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { cleanSvgTree, sanitizedSvgMarkup, type SvgElementLike } from "../src/sanitize-svg";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const XLINK_NS = "http://www.w3.org/1999/xlink";
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 type Attr = { name: string; localName: string; value: string };
