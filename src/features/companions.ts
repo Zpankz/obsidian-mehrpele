@@ -5,10 +5,18 @@
  */
 import type { ToggleId } from "../settings/schema";
 
-/** Flows is an add-on, not a host feature toggle. Install opens instructions until listing. */
+/** Flows is a separate BRAT-installable add-on, not a host feature toggle. */
 export const FLOWS = {
   id: "mehrpele-cannoli", name: "Mehrpele Flows", minHostMinor: 1,
-  installUrl: "https://github.com/Zpankz/mehrpele/tree/main/packages/mehrpele-cannoli#install",
+  repository: "Zpankz/obsidian-mehrpele-cannoli",
+  installUrl: "https://github.com/Zpankz/obsidian-mehrpele-cannoli#install",
+  releaseUrl: "https://github.com/Zpankz/obsidian-mehrpele-cannoli/releases/latest",
+  installationHelp: [
+    "Install and enable BRAT from Settings → Community plugins. In BRAT settings, choose Add beta plugin and enter Zpankz/obsidian-mehrpele-cannoli, then select the latest release and install it. Installing Mehrpele alone does not install Flows.",
+    "For manual installation, download main.js, manifest.json, and styles.css from the public release linked below and copy them into {vaultConfig}/plugins/mehrpele-cannoli inside your vault. Do not replace the Mehrpele host plugin’s files.",
+    "Restart Obsidian after manual installation, then enable Mehrpele Flows in Settings → Community plugins. Keep Mehrpele enabled as well. Configure provider keys and network permissions in the add-on’s own settings.",
+    "BRAT can manage updates. For manual updates, stop active flows and disable Mehrpele Flows before replacing its three files, then enable it again. Use the public companion repository, not the private monorepo.",
+  ],
 } as const;
 export interface AddonRegistration { version: string; requiredHostMinor: number }
 export interface FlowStatus {
@@ -22,7 +30,7 @@ export interface FlowStatus {
 /** Enabled alone does not prove that diagram integration connected successfully. */
 export function detectFlows(plugins: PluginManagerLike | undefined, hostMinor: number, registration?: AddonRegistration | null): FlowStatus {
   const state = detectCompanion(plugins, FLOWS.id);
-  if (!state.installed) return { kind: "missing", label: "Not installed", detail: "Run LLM flows drawn as diagrams with your own provider keys; data goes only to providers you choose." };
+  if (!state.installed) return { kind: "missing", label: "Not installed", detail: "Install the separate Flows add-on through BRAT or a manual download to run LLM flows with your own provider keys." };
   const version = state.version ? `Version ${state.version}` : "Installed";
   if (!state.enabled) return { kind: "disabled", label: "Installed, disabled", detail: `${version}; enable the add-on to run flows.` };
   const required = registration?.requiredHostMinor ?? FLOWS.minHostMinor;

@@ -614,7 +614,7 @@ export function flowsPage(ctx: TabContext): PageDef {
           const paint = () => {
             const state = status();
             s.setDesc(`${state.label} — ${state.detail}`);
-            b.setButtonText(state.kind === "missing" ? "Install" : state.kind === "disabled" ? "Enable" : state.kind === "ready" ? "Open settings" : "Update");
+            b.setButtonText(state.kind === "missing" ? "Installation guide" : state.kind === "disabled" ? "Enable" : state.kind === "ready" ? "Open settings" : state.updateTarget === "host" ? "Update Mehrpele" : "Update guide");
           };
           paint();
           ctx.watchFlows?.(s.settingEl, paint);
@@ -634,7 +634,7 @@ export function flowsPage(ctx: TabContext): PageDef {
         });
       },
     }, {
-      name: "Download size", desc: "The add-on targets a download of about 1.5 MB.",
+      name: "Availability", desc: "Available as a separate plugin through BRAT or manual download; the installation guide includes the public repository and release links.",
     }, {
       name: "Requires", desc: "Mehrpele API 1.1 or later provides diagram integration.",
     }, {

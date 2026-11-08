@@ -1,6 +1,6 @@
 {
   "name": "mehrpele",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Render Mermaid diagrams with the open-source Pele engine, with optional editing, Markdown labels, and canvas and Excalidraw conversion. Unofficial; not affiliated with Obsidian.",
   "main": "main.js",
   "type": "module",

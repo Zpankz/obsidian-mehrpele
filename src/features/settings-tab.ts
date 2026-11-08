@@ -4,7 +4,7 @@
  * data; the tab parts load through `lazy.settingsTab()` and import no feature
  * code. Controls read and write dotted v3 keys through this class.
  */
-import { Notice, PluginSettingTab, requestUrl, type SettingDefinitionItem, type TAbstractFile, TFile } from "obsidian";
+import { Modal, Notice, PluginSettingTab, requestUrl, type SettingDefinitionItem, type TAbstractFile, TFile } from "obsidian";
 import { forgetTextWidths } from "pele-render/pele";
 import type PeleMermaidPlugin from "../../main";
 import { isEnabledV3, normalizeInPlace, TOGGLE_IDS, type ToggleId } from "../settings/schema";
@@ -115,7 +115,18 @@ export class LazySettingTab extends PluginSettingTab {
   }
 
   private openPluginPage(id: string): void {
-    const url = id === FLOWS.id ? FLOWS.installUrl : `obsidian://show-plugin?id=${encodeURIComponent(id)}`;
+    if (id === FLOWS.id) {
+      const modal = new Modal(this.app);
+      modal.setTitle(`${FLOWS.name}: installation and updates`);
+      for (const paragraph of FLOWS.installationHelp) modal.contentEl.createEl("p", { text: paragraph.replace("{vaultConfig}", this.app.vault.configDir) });
+      const links = modal.contentEl.createEl("p");
+      links.createEl("a", { text: "Installation instructions", href: FLOWS.installUrl, attr: { target: "_blank", rel: "noopener noreferrer" } });
+      links.appendText(" · ");
+      links.createEl("a", { text: "Download latest release", href: FLOWS.releaseUrl, attr: { target: "_blank", rel: "noopener noreferrer" } });
+      modal.open();
+      return;
+    }
+    const url = `obsidian://show-plugin?id=${encodeURIComponent(id)}`;
     try {
       const win = this.containerEl.ownerDocument.defaultView ?? window;
       if (typeof win.open !== "function") throw new Error("No link opener");

@@ -300,7 +300,7 @@ test("Flows actions use live state and preserve the same button through enable",
   const setting = fakeSetting();
   row.render(setting);
   const button = setting.buttons[0]!;
-  expect(button.text).toBe("Install");
+  expect(button.text).toBe("Installation guide");
   await button.click();
   expect(runs).toEqual(["openPluginPage"]);
   state = { ...state, kind: "disabled", label: "Installed, disabled" }; repaint();
@@ -333,6 +333,7 @@ test("Flows update routes disconnected companions to instructions and known API 
   ctx.run = { ...ctx.run, openPluginPage: id => { calls.push(`plugin:${id}`); }, updateHost: () => { calls.push("host"); } } as TabContext["run"];
   const setting = fakeSetting();
   (D.flowsPage(ctx).items as Node[])[0]!.render(setting);
+  expect(setting.buttons[0]!.text).toBe("Update guide");
   await setting.buttons[0]!.click();
   expect(calls).toEqual([`plugin:${FLOWS.id}`]);
   state = detectFlows(pm, 0);
